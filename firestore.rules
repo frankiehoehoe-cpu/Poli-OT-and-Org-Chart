@@ -1,0 +1,101 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return true; // App uses client-side session, no Firebase Auth
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Helpers ---
+    function isValidEmployee(data) {
+      return data.keys().hasAll(['name', 'password', 'role']) &&
+             data.name is string && data.name.size() < 200 &&
+             data.password is string && data.password.size() < 100 &&
+             (data.role == 'employee' || data.role == 'supervisor' || data.role == 'manager');
+    }
+
+    function isValidOvertime(data) {
+      return data.keys().hasAll(['employeeId', 'employeeName', 'date', 'startTime', 'endTime', 'totalHours', 'verified', 'status']) &&
+             data.employeeId is string &&
+             data.employeeName is string &&
+             data.date is string &&
+             data.totalHours is number &&
+             data.verified is bool &&
+             data.status in ['pending', 'verified', 'rejected'];
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll(['month', 'employeeId', 'signature', 'type']) &&
+             data.month is string &&
+             data.employeeId is string &&
+             data.signature is string &&
+             data.type in ['draw', 'upload', 'text'];
+    }
+
+    // --- Employee Profiles ---
+    match /employees/{employeeId} {
+      allow create: if isValidEmployee(incoming());
+      allow list, get: if true;
+      allow update: if isValidEmployee(incoming());
+      allow delete: if true;
+    }
+
+    // --- Overtime Entries ---
+    match /overtime/{entryId} {
+      allow create: if isValidOvertime(incoming());
+      allow list, get: if true;
+      allow update: if isValidOvertime(incoming());
+      allow delete: if true;
+    }
+
+    // --- Overtime Plans ---
+    match /plans/{planId} {
+      allow create: if 
+        incoming().employeeId is string &&
+        incoming().date is string;
+      
+      allow list, get, delete: if true;
+    }
+
+    // --- Monthly Reports ---
+    match /monthlyReports/{reportId} {
+      allow list, get: if true;
+      allow create, update: if isValidReport(incoming());
+    }
+
+    // --- Rosters ---
+    match /rosters/{rosterId} {
+      allow read, write: if true;
+    }
+    // --- Locations ---
+    match /locations/{locationId} {
+      allow read, write: if true;
+    }
+    // --- Org Chart ---
+    match /orgChartNodes/{nodeId} {
+      allow read, write: if true;
+    }
+    match /orgChartSettings/{settingId} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "OT Pro",
+  "description": "Professional overtime tracking system. Add to home screen for quick access.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

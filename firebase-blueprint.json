@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "employees": {
+      "title": "Employee Profile",
+      "description": "Stores employee login name and password set by manager.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Display name of the employee" },
+        "password": { "type": "string", "description": "Hashed or plain password for first level access" },
+        "department": { "type": "string" },
+        "role": { "type": "string", "enum": ["employee"] }
+      },
+      "required": ["name", "password", "role"]
+    },
+    "overtime": {
+      "title": "Overtime Entry",
+      "description": "Records of individual overtime sessions.",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "totalHours": { "type": "number" },
+        "remarks": { "type": "string" },
+        "verified": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["pending", "verified", "rejected"] },
+        "verifiedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["employeeId", "employeeName", "date", "startTime", "endTime", "totalHours", "verified", "status", "createdAt"]
+    },
+    "plans": {
+      "title": "Overtime Plan",
+      "description": "Planned overtime sessions declared by employees.",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["employeeId", "employeeName", "date", "createdAt"]
+    },
+    "monthlyReports": {
+      "title": "Monthly Report",
+      "description": "Approval and signature per employee for various roles (manager, supervisor).",
+      "type": "object",
+      "properties": {
+        "month": { "type": "string", "description": "Format YYYY-MM" },
+        "employeeId": { "type": "string" },
+        "signature": { "type": "string", "description": "Signature data (text or base64)" },
+        "type": { "type": "string", "enum": ["draw", "upload", "text"] },
+        "role": { "type": "string", "enum": ["manager", "supervisor"] },
+        "signedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["month", "employeeId", "signature", "type", "role", "createdAt"]
+    },
+    "orgChartNodes": {
+      "title": "Org Chart Node",
+      "description": "Individual cards inside the organization chart.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "roleName": { "type": "string" },
+        "email": { "type": "string" },
+        "ext": { "type": "string" },
+        "parentId": { "type": ["string", "null"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "roleName"]
+    },
+    "orgChartSettings": {
+      "title": "Org Chart Settings",
+      "description": "General settings for the org chart.",
+      "type": "object",
+      "properties": {
+        "showInPublicView": { "type": "boolean" }
+      },
+      "required": ["showInPublicView"]
+    }
+  },
+  "firestore": {
+    "employees": {
+      "schema": "employees",
+      "description": "Collection of employee profiles managed by managers."
+    },
+    "overtime": {
+      "schema": "overtime",
+      "description": "Collection of overtime records logged by employees and verified by supervisors."
+    },
+    "plans": {
+      "schema": "plans",
+      "description": "Collection of planned overtime sessions."
+    },
+    "monthlyReports": {
+      "schema": "monthlyReports",
+      "description": "Monthly approval reports for managers and supervisors."
+    },
+    "orgChartNodes": {
+      "schema": "orgChartNodes",
+      "description": "Interactive employee organization chart hierarchy."
+    },
+    "orgChartSettings": {
+      "schema": "orgChartSettings",
+      "description": "Global settings for the organization chart visibility."
+    }
+  }
+}
