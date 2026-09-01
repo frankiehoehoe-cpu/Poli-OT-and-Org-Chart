@@ -49,7 +49,6 @@ export default function IntroVideoOverlay({ onComplete }: IntroVideoOverlayProps
         onEnded={finish}
         onError={finish}
       >
-        <source src="/videos/otpro-intro.webm" type="video/webm" />
         <source src="/videos/otpro-intro.mp4" type="video/mp4" />
       </video>
 

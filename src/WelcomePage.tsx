@@ -4,17 +4,12 @@ import { motion } from 'motion/react';
 import { ArrowRight } from 'lucide-react';
 import IntroVideoOverlay from './components/IntroVideoOverlay';
 
-const INTRO_SESSION_KEY = 'otpro_intro_seen';
+const INTRO_SESSION_KEY = 'otpro_intro_seen_v2';
 
 function shouldPlayIntro() {
   if (typeof window === 'undefined') return false;
 
   try {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      sessionStorage.setItem(INTRO_SESSION_KEY, 'true');
-      return false;
-    }
-
     return sessionStorage.getItem(INTRO_SESSION_KEY) !== 'true';
   } catch {
     return true;
