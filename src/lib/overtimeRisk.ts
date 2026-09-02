@@ -2,20 +2,26 @@ import type { OvertimeEntry, UserProfile } from '../types';
 
 export const OT_RISK_THRESHOLDS = {
   watch: {
-    monthlyHours: 30,
-    weeklyHours: 12,
+    monthlyHours: 40,
+    weeklyHours: 14,
     consecutiveDays: 4,
   },
   high: {
-    monthlyHours: 45,
-    weeklyHours: 18,
+    monthlyHours: 60,
+    weeklyHours: 20,
     consecutiveDays: 5,
-    longOtDays: 3,
+    longSessionDays: 3,
+  },
+  critical: {
+    monthlyHours: 80,
+    weeklyHours: 26,
+    consecutiveDays: 7,
+    longSessionDays: 5,
   },
   longSessionHours: 4,
 } as const;
 
-export type OvertimeRiskLevel = 'NORMAL' | 'WATCH' | 'HIGH';
+export type OvertimeRiskLevel = 'NORMAL' | 'WATCH' | 'HIGH' | 'CRITICAL';
 
 export interface WeeklyOvertime {
   weekStart: string;
@@ -36,6 +42,7 @@ export interface EmployeeOvertimeRisk {
   longOtDayCount: number;
   lastOtDate: string | null;
   level: OvertimeRiskLevel;
+  primaryReason: string;
   reasons: string[];
   entries: OvertimeEntry[];
 }
@@ -105,18 +112,26 @@ export const calculateEmployeeOvertimeRisk = (
   const longEntries = employeeEntries.filter((entry) => entry.totalHours > OT_RISK_THRESHOLDS.longSessionHours);
   const longOtDayCount = new Set(longEntries.map((entry) => entry.date)).size;
 
-  const highReasons: string[] = [];
-  if (monthlyHours >= OT_RISK_THRESHOLDS.high.monthlyHours) highReasons.push(`Monthly OT ${monthlyHours.toFixed(1)}h`);
-  if (weeklyHours >= OT_RISK_THRESHOLDS.high.weeklyHours) highReasons.push(`Highest weekly OT ${weeklyHours.toFixed(1)}h`);
-  if (consecutiveDays >= OT_RISK_THRESHOLDS.high.consecutiveDays) highReasons.push(`${consecutiveDays} consecutive OT days`);
-  if (longOtDayCount >= OT_RISK_THRESHOLDS.high.longOtDays) highReasons.push(`${longOtDayCount} days with OT sessions over 4h`);
+  const isCritical = monthlyHours >= OT_RISK_THRESHOLDS.critical.monthlyHours
+    || weeklyHours >= OT_RISK_THRESHOLDS.critical.weeklyHours
+    || consecutiveDays >= OT_RISK_THRESHOLDS.critical.consecutiveDays
+    || longOtDayCount >= OT_RISK_THRESHOLDS.critical.longSessionDays;
+  const isHigh = monthlyHours >= OT_RISK_THRESHOLDS.high.monthlyHours
+    || weeklyHours >= OT_RISK_THRESHOLDS.high.weeklyHours
+    || consecutiveDays >= OT_RISK_THRESHOLDS.high.consecutiveDays
+    || longOtDayCount >= OT_RISK_THRESHOLDS.high.longSessionDays;
+  const isWatch = monthlyHours >= OT_RISK_THRESHOLDS.watch.monthlyHours
+    || weeklyHours >= OT_RISK_THRESHOLDS.watch.weeklyHours
+    || consecutiveDays >= OT_RISK_THRESHOLDS.watch.consecutiveDays;
+  const level: OvertimeRiskLevel = isCritical ? 'CRITICAL' : isHigh ? 'HIGH' : isWatch ? 'WATCH' : 'NORMAL';
 
-  const watchReasons: string[] = [];
-  if (monthlyHours >= OT_RISK_THRESHOLDS.watch.monthlyHours) watchReasons.push(`Monthly OT ${monthlyHours.toFixed(1)}h`);
-  if (weeklyHours >= OT_RISK_THRESHOLDS.watch.weeklyHours) watchReasons.push(`Highest weekly OT ${weeklyHours.toFixed(1)}h`);
-  if (consecutiveDays >= OT_RISK_THRESHOLDS.watch.consecutiveDays) watchReasons.push(`${consecutiveDays} consecutive OT days`);
-
-  const level: OvertimeRiskLevel = highReasons.length ? 'HIGH' : watchReasons.length ? 'WATCH' : 'NORMAL';
+  // Reasons are deterministic and ordered by management usefulness.
+  const reasons: string[] = [];
+  if (monthlyHours >= OT_RISK_THRESHOLDS.watch.monthlyHours) reasons.push(`Monthly OT ${monthlyHours.toFixed(1)}h`);
+  if (weeklyHours >= OT_RISK_THRESHOLDS.watch.weeklyHours) reasons.push(`Peak week ${weeklyHours.toFixed(1)}h`);
+  if (consecutiveDays >= OT_RISK_THRESHOLDS.watch.consecutiveDays) reasons.push(`${consecutiveDays} consecutive OT days`);
+  if (longOtDayCount >= OT_RISK_THRESHOLDS.high.longSessionDays) reasons.push(`${longOtDayCount} long OT days`);
+  if (!reasons.length) reasons.push('Within internal monitoring thresholds');
 
   return {
     employeeId: employee.id,
@@ -131,7 +146,8 @@ export const calculateEmployeeOvertimeRisk = (
     longOtDayCount,
     lastOtDate: employeeEntries[0]?.date ?? null,
     level,
-    reasons: level === 'HIGH' ? highReasons : level === 'WATCH' ? watchReasons : ['Within internal monitoring thresholds'],
+    primaryReason: reasons[0],
+    reasons,
     entries: employeeEntries,
   };
 };
