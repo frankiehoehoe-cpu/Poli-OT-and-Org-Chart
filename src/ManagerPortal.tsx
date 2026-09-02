@@ -501,6 +501,12 @@ export default function ManagerPortal() {
             active={activeTab === 'orgchart'} 
             onClick={() => setActiveTab('orgchart')} 
           />
+          <SidebarLink
+            icon={<Briefcase className="w-5 h-5" />}
+            label="REVIEW LAB / 实验功能"
+            active={false}
+            onClick={() => navigate('/review-lab')}
+          />
           <SidebarLink 
             icon={<Settings className="w-5 h-5" />} 
             label="Settings / 设置" 

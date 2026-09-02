@@ -8,6 +8,7 @@ import ManagerPortal from './ManagerPortal';
 
 import LandingPage from './LandingPage';
 import WelcomePage from './WelcomePage';
+import ReviewLab from './ReviewLab';
 
 function AppContent() {
   const { role, isLoading } = useAuth();
@@ -33,6 +34,7 @@ function AppContent() {
           <Navigate to="/" replace />
         } 
       />
+      <Route path="/review-lab" element={role === 'manager' ? <ReviewLab /> : <Navigate to="/" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -49,3 +51,4 @@ export default function App() {
     </LanguageProvider>
   );
 }
+
