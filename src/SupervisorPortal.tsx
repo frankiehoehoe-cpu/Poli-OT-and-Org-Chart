@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext';
 import { useTranslation } from './lib/LanguageContext';
-import { overtimeService, reportService } from './lib/services';
-import { OvertimeEntry } from './types';
+import { employeeService, overtimeService, reportService } from './lib/services';
+import { OvertimeEntry, UserProfile } from './types';
+import { ReviewSupervisorTasks } from './components/review/TaskWorkflow';
 import { motion, AnimatePresence } from 'motion/react';
 import SignatureCanvas from 'react-signature-canvas';
 import { formatDate, formatTime, formatDateWithDay } from './lib/dateUtils';
@@ -41,6 +42,7 @@ export default function SupervisorPortal() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [entries, setEntries] = useState<OvertimeEntry[]>([]);
+  const [reviewEmployees, setReviewEmployees] = useState<UserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
@@ -63,8 +65,12 @@ export default function SupervisorPortal() {
   }, [selectedMonth, selectedEmployeeId]);
 
   const fetchEntries = async () => {
-    const data = await overtimeService.getAllEntries(selectedMonth);
+    const [data, employees] = await Promise.all([
+      overtimeService.getAllEntries(selectedMonth),
+      employeeService.getAllEmployees()
+    ]);
     setEntries(data);
+    setReviewEmployees(employees);
     setIsLoading(false);
   };
 
@@ -197,6 +203,7 @@ export default function SupervisorPortal() {
       </header>
 
       <main className="max-w-5xl mx-auto p-6 space-y-6">
+        <ReviewSupervisorTasks employees={reviewEmployees} />
         <AnimatePresence mode="wait">
           {!selectedEmployeeId ? (
             <motion.div 
@@ -624,3 +631,4 @@ export default function SupervisorPortal() {
     </div>
   );
 }
+
