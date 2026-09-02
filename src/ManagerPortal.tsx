@@ -6,7 +6,7 @@ import { employeeService, overtimeService, reportService, adminService, planServ
 import { UserProfile, OvertimeEntry, OvertimeSummary, OvertimePlan } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import SignatureCanvas from 'react-signature-canvas';
-import { formatDate, formatTime, parseDate, formatDateFriendly, formatDateWithDay } from './lib/dateUtils';
+import { formatDate, formatTime, parseDate, formatDateFriendly, formatDateWithDay, formatMonth } from './lib/dateUtils';
 import { 
   Briefcase, 
   Plus, 
@@ -20,7 +20,6 @@ import {
   Lock,
   Clock,
   CheckCircle2,
-  TrendingUp,
   FileText,
   PenTool,
   Upload,
@@ -38,16 +37,8 @@ import {
 } from 'lucide-react';
 import RosterBoard from './RosterBoard';
 import OrgChart from './components/OrgChart';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  Cell
-} from 'recharts';
+import ManagerControlDashboard from './components/ManagerControlDashboard';
+import { getSingaporeMonth } from './lib/overtimeRisk';
 
 export default function ManagerPortal() {
   const { logout, user } = useAuth();
@@ -76,7 +67,7 @@ export default function ManagerPortal() {
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
 
   // Reporting State
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState(getSingaporeMonth());
   const [selectedEmployeeSummary, setSelectedEmployeeSummary] = useState<OvertimeSummary | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
   const [signatureType, setSignatureType] = useState<'upload' | 'text' | 'draw' | null>(null);
@@ -462,8 +453,6 @@ export default function ManagerPortal() {
     }
   };
 
-  const COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
-
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
       {/* Sidebar */}
@@ -559,7 +548,7 @@ export default function ManagerPortal() {
               )}
             </h2>
             <p className="text-slate-800 mt-1 font-medium">
-              Overview for {new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+              Overview for {formatMonth(selectedMonth)}
               <span className="ml-2 text-slate-600">| {selectedMonth} 概览</span>
             </p>
           </div>
@@ -575,62 +564,7 @@ export default function ManagerPortal() {
         </header>
 
         {activeTab === 'dashboard' && (
-          <div className="space-y-8">
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <StatCard 
-                label={t('totalHours')} 
-                value={summaries.reduce((acc, s) => acc + s.totalHours, 0).toFixed(1)} 
-                icon={<Clock className="w-6 h-6 text-indigo-600" />} 
-                color="indigo"
-              />
-              <StatCard 
-                label={t('avgHours')} 
-                value={(summaries.reduce((acc, s) => acc + s.totalHours, 0) / (summaries.filter(s => s.entryCount > 0).length || 1)).toFixed(1)} 
-                icon={<TrendingUp className="w-6 h-6 text-amber-600" />} 
-                color="amber"
-              />
-              <StatCard 
-                label={t('employee')} 
-                value={employees.length.toString()} 
-                icon={<Users className="w-6 h-6 text-emerald-600" />} 
-                color="emerald"
-              />
-            </div>
-
-            {/* Chart */}
-            <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-              <h3 className="text-lg font-bold text-slate-900 mb-8">{t('compare')}</h3>
-              <div className="h-[350px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={summaries}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis 
-                      dataKey="employeeName" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }}
-                      dy={10}
-                    />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }}
-                    />
-                    <Tooltip 
-                      cursor={{ fill: '#f8fafc' }}
-                      contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                    />
-                    <Bar dataKey="totalHours" radius={[8, 8, 0, 0]} barSize={40}>
-                      {summaries.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
+          <ManagerControlDashboard month={selectedMonth} onMonthChange={setSelectedMonth} employees={employees} entries={entries} />
         )}
 
         {activeTab === 'profiles' && (
@@ -1829,3 +1763,4 @@ function StatCard({ label, value, icon, color }: { label: string, value: string,
     </div>
   );
 }
+
