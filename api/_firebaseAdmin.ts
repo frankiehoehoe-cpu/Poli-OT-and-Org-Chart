@@ -5,6 +5,7 @@ interface FirestoreValue { stringValue?: string; booleanValue?: boolean; integer
 interface FirestoreDocument { name: string; fields?: Record<string, FirestoreValue> }
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
+const FIRESTORE_DATABASE_ID = 'ai-studio-46429e4f-5a9c-4b81-9602-b3382410985b';
 
 function credentials(): ServiceAccount {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
@@ -35,7 +36,7 @@ async function accessToken(): Promise<string> {
 async function firestore(path: string): Promise<Response> {
   const account = credentials();
   const token = await accessToken();
-  return fetch(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(account.project_id)}/databases/(default)/documents/${path}`, { headers: { authorization: `Bearer ${token}` } });
+  return fetch(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(account.project_id)}/databases/${encodeURIComponent(FIRESTORE_DATABASE_ID)}/documents/${path}`, { headers: { authorization: `Bearer ${token}` } });
 }
 
 const value = (field?: FirestoreValue): unknown => field?.stringValue ?? field?.booleanValue ?? (field?.integerValue ? Number(field.integerValue) : field?.doubleValue);
