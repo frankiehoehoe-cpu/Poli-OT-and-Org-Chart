@@ -4,7 +4,6 @@ import { useAuth } from './lib/AuthContext';
 import { useTranslation } from './lib/LanguageContext';
 import { employeeService, overtimeService, planService } from './lib/services';
 import { UserProfile, OvertimeEntry, OvertimePlan } from './types';
-import { ReviewEmployeeAssignments } from './components/review/TaskWorkflow';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDate, formatTime, parseDate, formatDateFriendly, formatDateWithDay } from './lib/dateUtils';
 import { 
@@ -437,7 +436,6 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
       </header>
 
       <main className="max-w-4xl mx-auto p-6 space-y-6">
-        {selectedEmployee && <ReviewEmployeeAssignments employee={selectedEmployee} />}
         <AnimatePresence mode="wait">
           {!selectedEmployee ? (
             <motion.div 
@@ -1061,4 +1059,3 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
     </div>
   );
 }
-

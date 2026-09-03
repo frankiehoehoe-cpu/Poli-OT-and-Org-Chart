@@ -23,6 +23,7 @@ import {
 import LoginPage from './LoginPage';
 import EmployeePortal from './EmployeePortal';
 import OrgChart from './components/OrgChart';
+import { PublicTonightAssignments } from './components/review/TaskWorkflow';
 
 export default function LandingPage() {
   const { t, language, setLanguage } = useTranslation();
@@ -177,21 +178,12 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* Hero Content */}
-      <main className="flex-1 max-w-6xl mx-auto w-full p-6 pt-28 pb-20 space-y-12">
-        <header className="text-center space-y-4">
-          <motion.h1 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-4xl md:text-6xl font-black text-slate-900 leading-tight"
-          >
-            {t('publicOverview')} <br/>
-            <span className="text-vibrant">{t('start')}</span>
-          </motion.h1>
-          <p className="text-slate-700 font-medium max-w-2xl mx-auto">
-            {t('selectEmployee')}
-          </p>
+      <main className="flex-1 max-w-6xl mx-auto w-full p-4 pt-24 pb-20 space-y-10 sm:p-6 sm:pt-28">
+        <header className="flex items-end justify-between border-b border-slate-200 pb-4">
+          <div><p className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600">OT PRO</p><h1 className="text-2xl font-black text-slate-900 sm:text-3xl">{t('publicOverview')} <span className="text-slate-400">/ 公共概览</span></h1></div>
         </header>
+
+        <PublicTonightAssignments />
 
         {/* Current Month Calendar */}
         <section className="max-w-4xl mx-auto w-full">
