@@ -171,4 +171,3 @@ export const getSingaporeMonth = (date = new Date()) => {
   const month = parts.find((part) => part.type === 'month')?.value;
   return `${year}-${month}`;
 };
-

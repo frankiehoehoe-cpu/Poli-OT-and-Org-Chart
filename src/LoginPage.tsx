@@ -20,23 +20,16 @@ export default function LoginPage({ forceRoleSelection = false, onBack }: { forc
     setPassword('');
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (activeRole === 'supervisor') {
-      if (password === '123456') {
-        login('supervisor');
-        navigate('/portal');
-      } else {
-        setError(t('wrongPassword'));
-      }
-    } else if (activeRole === 'manager') {
-      if (password === '999111') {
-        login('manager');
-        navigate('/portal');
-      } else {
-        setError(t('wrongPassword'));
-      }
-    }
+    if (activeRole !== 'supervisor' && activeRole !== 'manager') return;
+    const response = await fetch('/api/staff/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role: activeRole, password }) });
+    setPassword('');
+    if (!response.ok) return setError(t('wrongPassword'));
+    const result = await response.json() as { verified: boolean; role?: Role };
+    if (!result.verified || result.role !== activeRole) return setError(t('wrongPassword'));
+    login(activeRole);
+    navigate('/portal');
   };
 
   return (

@@ -71,12 +71,10 @@ export const employeeService = {
         return [...employeeCache];
       }
 
-      const q = query(collection(db, 'employees'), orderBy('name'), limit(500));
-      const snapshot = await getDocs(q);
-      employeeCache = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as UserProfile[];
+      const response = await fetch('/api/employees', { headers: { accept: 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error(`Employee service unavailable (${response.status})`);
+      const result = await response.json() as { employees: UserProfile[] };
+      employeeCache = result.employees;
       employeeCacheTime = Date.now();
       
       return [...employeeCache];
@@ -88,27 +86,17 @@ export const employeeService = {
 
   async getEmployeeById(id: string): Promise<UserProfile | null> {
     try {
-      const docRef = doc(db, 'employees', id);
-      const snapshot = await getDoc(docRef);
-      if (snapshot.exists()) {
-        return { id: snapshot.id, ...snapshot.data() } as UserProfile;
-      }
-      return null;
+      return (await this.getAllEmployees()).find(employee => employee.id === id) || null;
     } catch (e) {
       handleFirestoreError(e, OperationType.GET, `employees/${id}`);
       return null;
     }
   },
 
-  async updateEmployee(id: string, name: string, password: string, department: string): Promise<void> {
+  async updateEmployee(id: string, name: string, password: string | undefined, department: string): Promise<void> {
     try {
       const docRef = doc(db, 'employees', id);
-      await updateDoc(docRef, {
-        name,
-        password,
-        department,
-        updatedAt: serverTimestamp()
-      });
+      await updateDoc(docRef, { name, ...(password ? { password } : {}), department, updatedAt: serverTimestamp() });
       employeeCache = null;
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `employees/${id}`);
@@ -135,6 +123,17 @@ export const employeeService = {
       employeeCache = null;
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `employees/${id}`);
+    }
+  }
+  ,
+
+  async verifyEmployee(employeeId: string, password: string): Promise<{ verified: boolean; employee?: UserProfile }> {
+    try {
+      const response = await fetch('/api/employee/verify', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ employeeId, password }) });
+      if (!response.ok) return { verified: false };
+      return await response.json() as { verified: boolean; employee?: UserProfile };
+    } catch {
+      return { verified: false };
     }
   }
 };

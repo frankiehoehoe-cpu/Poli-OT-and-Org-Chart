@@ -631,4 +631,3 @@ export default function SupervisorPortal() {
     </div>
   );
 }
-

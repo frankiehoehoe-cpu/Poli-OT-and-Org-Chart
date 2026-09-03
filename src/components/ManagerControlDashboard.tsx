@@ -79,4 +79,3 @@ export default function ManagerControlDashboard({ month, onMonthChange, employee
     </div></div></div>}
   </div>;
 }
-

@@ -22,16 +22,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     if (savedRole) {
       setRole(savedRole);
-      if (savedUser) setUser(JSON.parse(savedUser));
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser) as UserProfile;
+        const safeUser = { id: parsed.id, name: parsed.name, role: parsed.role, ...(parsed.department ? { department: parsed.department } : {}) };
+        setUser(safeUser);
+        sessionStorage.setItem('userData', JSON.stringify(safeUser));
+      }
     }
     setIsLoading(false);
   }, []);
 
   const login = (role: Role, user?: UserProfile) => {
     setRole(role);
-    if (user) setUser(user);
+    const safeUser = user ? { id: user.id, name: user.name, role: user.role, ...(user.department ? { department: user.department } : {}) } : undefined;
+    if (safeUser) setUser(safeUser);
     sessionStorage.setItem('userRole', role);
-    if (user) sessionStorage.setItem('userData', JSON.stringify(user));
+    if (safeUser) sessionStorage.setItem('userData', JSON.stringify(safeUser));
   };
 
   const logout = () => {

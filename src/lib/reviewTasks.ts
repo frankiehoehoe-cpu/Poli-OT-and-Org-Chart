@@ -51,4 +51,3 @@ export const createNonOutputScenario = (employees: ReviewEmployee[]): ReviewTask
   id: `review-non-output-${Date.now()}`, date: '2026-09-02', department: 'Production', workstation: 'Cleaning / 清洁', product: '', batchNo: '', plannedStart: '18:00', plannedEnd: '20:00', taskType: 'non-output', targetRequirement: 'Complete full cleaning and sanitation of Sacheting Line 1', actualResult: 'Cleaning and sanitation completed', completionStatus: 'COMPLETED', status: 'CLOSED', createdAt: new Date().toISOString(), closedAt: new Date().toISOString(),
   participants: makeParticipants(employees.slice(0, 3), 'Cleaning / 清洁').map((p) => ({ ...p, status: 'COMPLETED', startTime: '18:00', endTime: '20:00', actualHours: 2 })),
 });
-
