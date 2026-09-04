@@ -39,6 +39,7 @@ import RosterBoard from './RosterBoard';
 import OrgChart from './components/OrgChart';
 import ManagerControlDashboard from './components/ManagerControlDashboard';
 import { getSingaporeMonth } from './lib/overtimeRisk';
+import { getEmploymentType, setReviewEmploymentType, type ReviewEmploymentType } from './lib/reviewTasks';
 
 export default function ManagerPortal() {
   const { logout, user } = useAuth();
@@ -54,6 +55,7 @@ export default function ManagerPortal() {
   const [newName, setNewName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newDepartment, setNewDepartment] = useState('deptProduction');
+  const [newEmploymentType, setNewEmploymentType] = useState<ReviewEmploymentType>('full-time');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [deletingEmployeeId, setDeletingEmployeeId] = useState<string | null>(null);
@@ -401,12 +403,15 @@ export default function ManagerPortal() {
     setIsSubmitting(true);
     if (editingEmployeeId) {
       await employeeService.updateEmployee(editingEmployeeId, newName, newPassword, newDepartment);
+      setReviewEmploymentType(editingEmployeeId, newEmploymentType);
     } else {
-      await employeeService.createEmployee(newName, newPassword, newDepartment);
+      const createdEmployeeId = await employeeService.createEmployee(newName, newPassword, newDepartment);
+      setReviewEmploymentType(createdEmployeeId, newEmploymentType);
     }
     setNewName('');
     setNewPassword('');
     setNewDepartment('deptProduction');
+    setNewEmploymentType('full-time');
     setEditingEmployeeId(null);
     await fetchData();
     setIsSubmitting(false);
@@ -417,6 +422,7 @@ export default function ManagerPortal() {
     setNewName(emp.name);
     setNewPassword(emp.password || '');
     setNewDepartment(emp.department || 'deptOther');
+    setNewEmploymentType(getEmploymentType(emp));
     setEditingEmployeeId(emp.id);
   };
 
@@ -616,6 +622,14 @@ export default function ManagerPortal() {
                       <option value="deptOther">{t('deptOther')}</option>
                     </select>
                   </div>
+                  <div>
+                    <p className="block text-sm font-bold text-slate-800 mb-2">Employment Type / 雇佣类型</p>
+                    <select value={newEmploymentType} onChange={e => setNewEmploymentType(e.target.value as ReviewEmploymentType)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 font-bold">
+                      <option value="full-time">FULL-TIME / 全职</option>
+                      <option value="part-time">PART-TIME / 兼职</option>
+                    </select>
+                    <p className="mt-1 text-[10px] text-amber-700">REVIEW LOCAL OVERRIDE — not saved to Firestore</p>
+                  </div>
                   <div className="flex gap-3">
                     {editingEmployeeId && (
                       <button 
@@ -625,6 +639,7 @@ export default function ManagerPortal() {
                           setNewName('');
                           setNewPassword('');
                           setNewDepartment('deptProduction');
+                          setNewEmploymentType('full-time');
                         }}
                         className="flex-1 bg-slate-100 text-slate-600 font-bold py-4 rounded-xl hover:bg-slate-200 transition-all text-sm"
                       >
@@ -658,6 +673,7 @@ export default function ManagerPortal() {
                         <span className="mx-2">|</span>
                         <span>{t(emp.department || 'deptOther')}</span>
                       </div>
+                      <span className={`mt-2 inline-block rounded-full px-2 py-0.5 text-[9px] font-black ${getEmploymentType(emp) === 'part-time' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600'}`}>{getEmploymentType(emp) === 'part-time' ? 'PART-TIME / 兼职' : 'FULL-TIME / 全职'}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">

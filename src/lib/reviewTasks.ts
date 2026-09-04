@@ -1,14 +1,16 @@
 export type ReviewTaskType = 'output' | 'non-output';
+export type ReviewAssignmentMode = 'ot-task' | 'work-shift';
+export type ReviewEmploymentType = 'full-time' | 'part-time';
 export type ReviewTaskStatus = 'PLANNED' | 'IN PROGRESS' | 'CLOSED' | 'CANCELLED';
 export type ParticipantStatus = 'NOT STARTED' | 'CONFIRMED' | 'OT IN PROGRESS' | 'COMPLETED';
 export type ReviewCompletionStatus = 'COMPLETED' | 'PARTIALLY COMPLETED' | 'NOT COMPLETED';
 
-export interface ReviewEmployee { id: string; name: string; department?: string }
-export interface ReviewCorrection { originalHours: number; correctedHours: number; note?: string; correctedAt: string }
-export interface ReviewParticipant { employeeId: string; employeeName: string; status: ParticipantStatus; assignedWorkstation: string; actualWorkstation: string; startTime?: string; endTime?: string; actualHours: number; submittedAt?: string; reviewPinVerified?: boolean; correction?: ReviewCorrection }
+export interface ReviewEmployee { id: string; name: string; department?: string; employmentType?: ReviewEmploymentType }
+export interface ReviewCorrection { originalHours: number; correctedHours: number; originalStart?: string; originalEnd?: string; correctedStart?: string; correctedEnd?: string; note?: string; correctedAt: string }
+export interface ReviewParticipant { employeeId: string; employeeName: string; employmentType?: ReviewEmploymentType; status: ParticipantStatus; assignedWorkstation: string; actualWorkstation: string; startTime?: string; endTime?: string; actualStart?: string; actualEnd?: string; actualHours: number; workedHours?: number; submittedAt?: string; reviewPinVerified?: boolean; correction?: ReviewCorrection }
 export interface ReviewTask {
   id: string; date: string; department: string; workstation: string; product: string; batchNo: string;
-  plannedStart: string; plannedEnd: string; taskType: ReviewTaskType; targetRequirement: string;
+  plannedStart: string; plannedEnd: string; taskType: ReviewTaskType; assignmentMode?: ReviewAssignmentMode; targetRequirement: string;
   actualResult?: string; completionStatus?: ReviewCompletionStatus; supervisorNote?: string;
   status: ReviewTaskStatus; participants: ReviewParticipant[]; createdAt: string; closedAt?: string; closedByReviewRole?: 'SUPERVISOR';
 }
@@ -16,12 +18,18 @@ export interface ReviewTask {
 export const REVIEW_STORAGE_KEY = 'otpro_review_tasks_v4';
 export const REVIEW_TIME_KEY = 'otpro_review_time_v1';
 export const REVIEW_DATE_OFFSET_KEY = 'otpro_review_date_offset_v1';
+export const REVIEW_EMPLOYMENT_STORAGE_KEY = 'otpro_review_employment_types_v1';
 export const REVIEW_PIN = '1234';
 export const REVIEW_TASKS_CHANGED = 'otpro-review-tasks-changed';
 export const WORKSTATIONS = ['Mixing / 搅拌', 'Oven Drying / 烘干', 'Grinding / 研磨', 'Encapsulation / 进胶囊', 'Polishing / 抛光', 'Blistering / 压板', 'Print Code / 打码', 'Sacheting / 茶袋包装', 'Packing / 包装', 'Cleaning / 清洁', 'Changeover / 转线', 'Other Production Work / 其他生产工作'];
 
 export const loadReviewTasks = (): ReviewTask[] => { try { return JSON.parse(localStorage.getItem(REVIEW_STORAGE_KEY) || '[]') as ReviewTask[]; } catch { return []; } };
 export const saveReviewTasks = (tasks: ReviewTask[]) => { localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(tasks)); window.dispatchEvent(new Event(REVIEW_TASKS_CHANGED)); };
+export const loadReviewEmploymentTypes = (): Record<string, ReviewEmploymentType> => { try { return JSON.parse(localStorage.getItem(REVIEW_EMPLOYMENT_STORAGE_KEY) || '{}') as Record<string, ReviewEmploymentType>; } catch { return {}; } };
+export const getEmploymentType = (employee: { id: string; employmentType?: ReviewEmploymentType }): ReviewEmploymentType => loadReviewEmploymentTypes()[employee.id] || employee.employmentType || 'full-time';
+export const setReviewEmploymentType = (employeeId: string, type: ReviewEmploymentType) => { const types = loadReviewEmploymentTypes(); types[employeeId] = type; localStorage.setItem(REVIEW_EMPLOYMENT_STORAGE_KEY, JSON.stringify(types)); window.dispatchEvent(new Event(REVIEW_TASKS_CHANGED)); };
+export const getParticipantEmploymentType = (participant: ReviewParticipant) => getEmploymentType({ id: participant.employeeId, employmentType: participant.employmentType });
+export const getAssignmentMode = (task: ReviewTask): ReviewAssignmentMode => task.assignmentMode || 'ot-task';
 
 export const getSingaporeDate = (date = new Date()): string => {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
@@ -71,11 +79,18 @@ export const getSingaporeMinutes = (date = new Date(), simulatedTime?: string | 
 };
 
 export const canSubmitReviewOt = (taskDate: string, simulatedTime?: string | null, date = new Date()) => taskDate === getSingaporeDate(date) && getSingaporeMinutes(date, simulatedTime) >= 20 * 60;
+export const canFullTimeEmployeeSubmitOt = (employeeId: string, task: ReviewTask, singaporeDate: string) => getAssignmentMode(task) === 'ot-task' && task.date === singaporeDate && task.status !== 'CLOSED' && task.status !== 'CANCELLED' && task.participants.some((participant) => participant.employeeId === employeeId && getParticipantEmploymentType(participant) === 'full-time' && participant.status !== 'COMPLETED');
+export const canPartTimeEmployeeSubmitWorkHours = (employeeId: string, task: ReviewTask, singaporeDate: string) => getAssignmentMode(task) === 'work-shift' && task.date === singaporeDate && task.status !== 'CLOSED' && task.status !== 'CANCELLED' && task.participants.some((participant) => participant.employeeId === employeeId && getParticipantEmploymentType(participant) === 'part-time' && participant.status !== 'COMPLETED');
 export const isReviewPinValid = (candidate: string) => candidate === REVIEW_PIN;
 export const applyReviewSubmission = (participant: ReviewParticipant, actualHours: number, submittedAt: string): { accepted: boolean; participant: ReviewParticipant } => {
   if (participant.status === 'COMPLETED' || !Number.isFinite(actualHours) || actualHours < 0.5 || actualHours > 12) return { accepted: false, participant };
   return { accepted: true, participant: { ...participant, status: 'COMPLETED', actualHours, submittedAt, reviewPinVerified: true } };
 };
+export const calculateWorkedHours = (start: string, end: string): number | null => { const [startHour, startMinute] = start.split(':').map(Number); const [endHour, endMinute] = end.split(':').map(Number); const minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute); return minutes > 0 ? minutes / 60 : null; };
+export const applyPartTimeSubmission = (participant: ReviewParticipant, actualStart: string, actualEnd: string, submittedAt: string): { accepted: boolean; participant: ReviewParticipant } => { const workedHours = calculateWorkedHours(actualStart, actualEnd); if (participant.status === 'COMPLETED' || workedHours === null) return { accepted: false, participant }; return { accepted: true, participant: { ...participant, employmentType: 'part-time', status: 'COMPLETED', actualStart, actualEnd, workedHours, actualHours: 0, submittedAt, reviewPinVerified: true } }; };
+export const hasTaskSubmissions = (task: ReviewTask) => task.participants.some((participant) => participant.status === 'COMPLETED');
+export const canRemoveParticipant = (participant: ReviewParticipant) => participant.status !== 'COMPLETED';
+export const getEffectiveParticipantHours = (participant: ReviewParticipant) => participant.status !== 'COMPLETED' ? 0 : participant.correction?.correctedHours ?? (getParticipantEmploymentType(participant) === 'part-time' ? participant.workedHours || 0 : participant.actualHours);
 
 export const parseProductionQuantity = (text?: string): number | null => {
   if (!text) return null;
@@ -86,12 +101,14 @@ export const parseProductionQuantity = (text?: string): number | null => {
 };
 
 export const getTaskMetrics = (task: ReviewTask) => {
-  const totalManHours = task.participants.reduce((sum, participant) => participant.status === 'COMPLETED' ? sum + (participant.correction?.correctedHours ?? participant.actualHours) : sum, 0);
+  const fullTimeOtHours = task.participants.reduce((sum, participant) => getParticipantEmploymentType(participant) === 'full-time' ? sum + getEffectiveParticipantHours(participant) : sum, 0);
+  const partTimeWorkedHours = task.participants.reduce((sum, participant) => getParticipantEmploymentType(participant) === 'part-time' ? sum + getEffectiveParticipantHours(participant) : sum, 0);
+  const totalManHours = fullTimeOtHours + partTimeWorkedHours;
   const targetQuantity = task.taskType === 'output' ? parseProductionQuantity(task.targetRequirement) : null;
   const actualQuantity = task.taskType === 'output' ? parseProductionQuantity(task.actualResult) : null;
   const outputVariance = targetQuantity !== null && actualQuantity !== null ? actualQuantity - targetQuantity : null;
   const productivity = actualQuantity !== null && totalManHours > 0 ? actualQuantity / totalManHours : null;
-  return { totalManHours, targetQuantity, actualQuantity, outputVariance, productivity };
+  return { totalManHours, fullTimeOtHours, partTimeWorkedHours, targetQuantity, actualQuantity, outputVariance, productivity };
 };
 
 export const getTaskStatus = (task: ReviewTask): ReviewTaskStatus => {
@@ -99,7 +116,7 @@ export const getTaskStatus = (task: ReviewTask): ReviewTaskStatus => {
   return task.participants.some((p) => p.status === 'OT IN PROGRESS' || p.status === 'COMPLETED') ? 'IN PROGRESS' : 'PLANNED';
 };
 
-const makeParticipants = (employees: ReviewEmployee[], workstation: string): ReviewParticipant[] => employees.map((employee) => ({ employeeId: employee.id, employeeName: employee.name, status: 'NOT STARTED', assignedWorkstation: workstation, actualWorkstation: workstation, actualHours: 0 }));
+export const makeParticipants = (employees: ReviewEmployee[], workstation: string): ReviewParticipant[] => employees.map((employee) => ({ employeeId: employee.id, employeeName: employee.name, employmentType: getEmploymentType(employee), status: 'NOT STARTED', assignedWorkstation: workstation, actualWorkstation: workstation, actualHours: 0 }));
 
 export const createOutputScenario = (employees: ReviewEmployee[]): ReviewTask => ({
   id: `review-output-${Date.now()}`, date: getSingaporeDate(), department: 'Production', workstation: 'Sacheting / 茶袋包装', product: 'Product ABC', batchNo: '26090301', plannedStart: '18:00', plannedEnd: '21:00', taskType: 'output', targetRequirement: 'Complete 10,000 sachets for Batch 26090301', actualResult: '10,500 sachets completed', completionStatus: 'COMPLETED', status: 'CLOSED', createdAt: new Date().toISOString(), closedAt: new Date().toISOString(),
