@@ -28,7 +28,7 @@ export const saveReviewTasks = (tasks: ReviewTask[]) => { localStorage.setItem(R
 export const loadReviewEmploymentTypes = (): Record<string, ReviewEmploymentType> => { try { return JSON.parse(localStorage.getItem(REVIEW_EMPLOYMENT_STORAGE_KEY) || '{}') as Record<string, ReviewEmploymentType>; } catch { return {}; } };
 export const getEmploymentType = (employee: { id: string; employmentType?: ReviewEmploymentType }): ReviewEmploymentType => loadReviewEmploymentTypes()[employee.id] || employee.employmentType || 'full-time';
 export const setReviewEmploymentType = (employeeId: string, type: ReviewEmploymentType) => { const types = loadReviewEmploymentTypes(); types[employeeId] = type; localStorage.setItem(REVIEW_EMPLOYMENT_STORAGE_KEY, JSON.stringify(types)); window.dispatchEvent(new Event(REVIEW_TASKS_CHANGED)); };
-export const getParticipantEmploymentType = (participant: ReviewParticipant) => getEmploymentType({ id: participant.employeeId, employmentType: participant.employmentType });
+export const getParticipantEmploymentType = (participant: ReviewParticipant) => participant.status === 'COMPLETED' && participant.employmentType ? participant.employmentType : getEmploymentType({ id: participant.employeeId, employmentType: participant.employmentType });
 export const getAssignmentMode = (task: ReviewTask): ReviewAssignmentMode => task.assignmentMode || 'ot-task';
 
 export const getSingaporeDate = (date = new Date()): string => {
