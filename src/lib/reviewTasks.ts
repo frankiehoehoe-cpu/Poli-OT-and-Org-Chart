@@ -10,11 +10,12 @@ export interface ReviewTask {
   id: string; date: string; department: string; workstation: string; product: string; batchNo: string;
   plannedStart: string; plannedEnd: string; taskType: ReviewTaskType; targetRequirement: string;
   actualResult?: string; completionStatus?: ReviewCompletionStatus; supervisorNote?: string;
-  status: ReviewTaskStatus; participants: ReviewParticipant[]; createdAt: string; closedAt?: string;
+  status: ReviewTaskStatus; participants: ReviewParticipant[]; createdAt: string; closedAt?: string; closedByReviewRole?: 'SUPERVISOR';
 }
 
 export const REVIEW_STORAGE_KEY = 'otpro_review_tasks_v4';
 export const REVIEW_TIME_KEY = 'otpro_review_time_v1';
+export const REVIEW_DATE_OFFSET_KEY = 'otpro_review_date_offset_v1';
 export const REVIEW_PIN = '1234';
 export const REVIEW_TASKS_CHANGED = 'otpro-review-tasks-changed';
 export const WORKSTATIONS = ['Mixing / 搅拌', 'Oven Drying / 烘干', 'Grinding / 研磨', 'Encapsulation / 进胶囊', 'Polishing / 抛光', 'Blistering / 压板', 'Print Code / 打码', 'Sacheting / 茶袋包装', 'Packing / 包装', 'Cleaning / 清洁', 'Changeover / 转线', 'Other Production Work / 其他生产工作'];
@@ -27,6 +28,40 @@ export const getSingaporeDate = (date = new Date()): string => {
   const part = (type: string) => parts.find((item) => item.type === type)?.value || '';
   return `${part('year')}-${part('month')}-${part('day')}`;
 };
+
+const dateValue = (date: string) => {
+  const [year, month, day] = date.split('-').map(Number);
+  return Date.UTC(year, month - 1, day);
+};
+
+export const addCalendarDays = (date: string, days: number): string => {
+  const next = new Date(dateValue(date) + days * 86_400_000);
+  return next.toISOString().slice(0, 10);
+};
+
+export const getReviewDate = (offsetDays = 0, date = new Date()) => addCalendarDays(getSingaporeDate(date), offsetDays);
+export const getTaskCalendarAge = (taskDate: string, reviewDate: string) => Math.round((dateValue(reviewDate) - dateValue(taskDate)) / 86_400_000);
+
+export const getTaskAgeStatus = (task: ReviewTask, reviewDate: string) => {
+  if (task.status === 'CLOSED' || task.status === 'CANCELLED') return { daysOverdue: 0, label: task.status, chinese: '', tone: 'closed' as const };
+  const daysOverdue = Math.max(0, getTaskCalendarAge(task.date, reviewDate));
+  if (!daysOverdue) return { daysOverdue, label: task.date > reviewDate ? 'SCHEDULED' : 'IN PROGRESS', chinese: '', tone: 'current' as const };
+  return { daysOverdue, label: `OPEN — ${daysOverdue} ${daysOverdue === 1 ? 'DAY' : 'DAYS'} OVERDUE`, chinese: `待关闭 — 已逾期 ${daysOverdue} 天`, tone: daysOverdue === 1 ? 'overdue' as const : 'older' as const };
+};
+
+export const sortSupervisorTasks = (tasks: ReviewTask[], reviewDate: string) => [...tasks].sort((a, b) => {
+  const rank = (task: ReviewTask) => {
+    if (task.status === 'CLOSED' || task.status === 'CANCELLED') return 3;
+    if (task.date < reviewDate) return 0;
+    if (task.date === reviewDate) return 1;
+    return 2;
+  };
+  const rankDifference = rank(a) - rank(b);
+  if (rankDifference) return rankDifference;
+  if (rank(a) === 0) return a.date.localeCompare(b.date);
+  if (rank(a) === 3) return (b.closedAt || b.createdAt).localeCompare(a.closedAt || a.createdAt);
+  return a.date.localeCompare(b.date) || a.plannedStart.localeCompare(b.plannedStart);
+});
 
 export const getSingaporeMinutes = (date = new Date(), simulatedTime?: string | null): number => {
   if (simulatedTime) { const [hours, minutes] = simulatedTime.split(':').map(Number); return hours * 60 + minutes; }
@@ -51,7 +86,7 @@ export const parseProductionQuantity = (text?: string): number | null => {
 };
 
 export const getTaskMetrics = (task: ReviewTask) => {
-  const totalManHours = task.participants.reduce((sum, participant) => sum + (participant.correction?.correctedHours ?? participant.actualHours), 0);
+  const totalManHours = task.participants.reduce((sum, participant) => participant.status === 'COMPLETED' ? sum + (participant.correction?.correctedHours ?? participant.actualHours) : sum, 0);
   const targetQuantity = task.taskType === 'output' ? parseProductionQuantity(task.targetRequirement) : null;
   const actualQuantity = task.taskType === 'output' ? parseProductionQuantity(task.actualResult) : null;
   const outputVariance = targetQuantity !== null && actualQuantity !== null ? actualQuantity - targetQuantity : null;
