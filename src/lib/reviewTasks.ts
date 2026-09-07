@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 55871)
-Total output lines: 3175
-
 export type ReviewTaskType = 'output' | 'non-output';
 export type ReviewAssignmentMode = 'ot-task' | 'work-shift';
 export type ReviewEmploymentType = 'full-time' | 'part-time';
