@@ -808,7 +808,10 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
               {/* History Table */}
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print-area">
                 <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-800">{t('dailyEntries')}</h3>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800">Legacy manual OT / 旧手动加班记录</h3>
+                    <p className="mt-1 text-xs font-bold text-slate-500">LEGACY / UNASSIGNED · SEPARATE FROM V1.3 TASK HISTORY</p>
+                  </div>
                   <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full">
                     {entries.length} {entries.length === 1 ? 'Record' : 'Records'}
                   </span>
@@ -857,6 +860,7 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
                               </p>
                             </td>
                             <td className="px-8 py-4">
+                              <div className="flex flex-col items-start gap-2">
                               {entry.verified ? (
                                 <span className="status-badge badge-verified">
                                   <CheckCircle2 className="w-4 h-4" />
@@ -872,6 +876,8 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
                                   {t('unverified')}
                                 </span>
                               )}
+                                <span className="rounded bg-slate-100 px-2 py-1 text-[9px] font-black text-slate-600">LEGACY / UNASSIGNED</span>
+                              </div>
                             </td>
                             <td className="px-8 py-4 text-right">
                               {!entry.verified && (
@@ -927,14 +933,14 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
                       <tfoot className="bg-slate-50/50 border-t-2 border-slate-100">
                         <tr>
                           <td className="px-8 py-6 text-sm font-bold text-slate-500 uppercase tracking-widest bg-slate-100/50">
-                            {t('totalHours')} <span className="text-[10px] font-normal block opacity-60">加班总时长</span>
+                            Legacy total <span className="text-[10px] font-normal block opacity-60">旧手动记录总时长</span>
                           </td>
                           <td className="px-8 py-6" colSpan={4}>
                             <div className="flex items-baseline gap-2">
                               <span className="text-3xl font-black text-vibrant">
                                 {entries.reduce((acc, curr) => acc + (curr.multiplier === 2.0 ? 0 : curr.totalHours), 0).toFixed(1)}
                               </span>
-                              <span className="text-sm font-bold text-indigo-400 uppercase tracking-widest">Total Hours / 总小时</span>
+                              <span className="text-sm font-bold text-indigo-400 uppercase tracking-widest">Legacy only / 仅旧记录</span>
                             </div>
                           </td>
                         </tr>
