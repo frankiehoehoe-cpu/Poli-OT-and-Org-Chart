@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext';
@@ -575,7 +574,401 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
                       {/* Friendly Preview */}
                       {date && (
                         <div className="absolute -bottom-6 left-0 text-[10px] font-black text-indigo-500 px-1 uppercase tracking-widest animate-in fade-in slide-in-from-top-1">
-                          {f…5871 tokens truncated…={handleUpdateEntry} className="space-y-6">
+                          {formatDateFriendly(date)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-slate-700" />
+                      {t('startTime')}
+                    </label>
+                    <input 
+                      type="time" 
+                      value={startTime} 
+                      onChange={e => setStartTime(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 bg-slate-50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-slate-700" />
+                      {t('endTime')}
+                    </label>
+                    <input 
+                      type="time" 
+                      value={endTime} 
+                      onChange={e => setEndTime(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 bg-slate-50 font-bold"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-slate-700" />
+                      {t('multiplier')}
+                    </label>
+                    <select
+                      value={multiplier}
+                      onChange={e => setMultiplier(parseFloat(e.target.value))}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 bg-slate-50 font-black"
+                    >
+                      <option value={1.5}>{t('overtime15')}</option>
+                      <option value={2.0}>{t('overtime20')}</option>
+                    </select>
+                  </div>
+                  <div className="sm:col-span-3 space-y-2">
+                    <label className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                      <Plus className="w-4 h-4 text-slate-700" />
+                      {t('remarks')}
+                    </label>
+                    <input 
+                      type="text" 
+                      value={remarks} 
+                      onChange={e => setRemarks(e.target.value)}
+                      placeholder="Add any notes here..."
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 bg-slate-50"
+                    />
+                  </div>
+                  <div className="sm:col-span-3 pt-2">
+                    <AnimatePresence>
+                      {feedback && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className={`mb-4 p-3 rounded-xl text-xs font-bold uppercase tracking-widest text-center ${
+                            feedback.type === 'success' ? 'bg-green-50 text-green-600 border border-green-100' : 'bg-red-50 text-red-600 border border-red-100'
+                          }`}
+                        >
+                          {feedback.message}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    <button 
+                      type="submit" 
+                      disabled={isSubmitting}
+                      className={`btn-vibrant w-full ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {isSubmitting ? (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+                      )}
+                      {t('submit')}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Planned Overtime Card */}
+              <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm no-print">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <div className="w-2 h-6 bg-amber-500 rounded-full"></div>
+                    {t('plannedOvertime')}
+                  </h3>
+                  <div className="flex items-center gap-1.5 text-slate-700 text-[10px] font-black uppercase tracking-widest">
+                    <AlertCircle className="w-3.5 h-3.5 text-slate-700" />
+                    {t('planTooltip')}
+                  </div>
+                </div>
+                
+                <form onSubmit={handleAddPlan} className="flex flex-col sm:flex-row gap-4 mb-8 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                  <div className="flex-1 space-y-2">
+                    <label className="text-xs font-black text-slate-700 uppercase tracking-widest">{t('date')}</label>
+                    <div className="relative group">
+                      {/* Manual text input for Planning */}
+                      <input 
+                        type="text"
+                        value={planDateInput}
+                        onChange={e => handleManualPlanDateChange(e.target.value)}
+                        placeholder="DD/MM/YYYY"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white font-bold text-slate-900 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 outline-none transition-all pr-10"
+                      />
+                      
+                      {/* Hidden date input - triggered by the icon */}
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer z-30">
+                        <Calendar className="w-4 h-4 text-amber-500 group-focus-within:text-amber-600 pointer-events-none" />
+                        <input 
+                          type="date" 
+                          value={planDate}
+                          onChange={e => setPlanDate(e.target.value)}
+                          min={new Date().toISOString().split('T')[0]}
+                          max={new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                          className="absolute inset-0 w-8 h-8 opacity-0 cursor-pointer text-transparent bg-transparent border-none appearance-none [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0"
+                          style={{ colorScheme: 'light' }}
+                        />
+                      </div>
+
+                      {/* Friendly Preview */}
+                      {planDate && (
+                        <div className="absolute -bottom-5 left-0 text-[10px] font-black text-amber-600 px-1 uppercase tracking-widest animate-in fade-in slide-in-from-top-1">
+                          {formatDateFriendly(planDate)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-end">
+                    <div className="w-full sm:w-auto space-y-3">
+                      <AnimatePresence>
+                        {planFeedback && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className={`p-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-center ${
+                              planFeedback.type === 'success' ? 'bg-green-50 text-green-600 border border-green-100' : 'bg-red-50 text-red-600 border border-red-100'
+                            }`}
+                          >
+                            {planFeedback.message}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                      <button 
+                        type="submit" 
+                        disabled={isPlanning}
+                        className={`w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-white font-black py-3.5 px-8 rounded-xl transition-all shadow-lg shadow-amber-100 flex items-center justify-center gap-3 uppercase tracking-widest text-xs ${isPlanning ? 'opacity-50' : ''}`}
+                      >
+                        {isPlanning ? (
+                           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        ) : (
+                          <CalendarClock className="w-4 h-4" />
+                        )}
+                        {t('planOvertime')}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                <div className="space-y-4">
+                  {plans.sort((a, b) => a.date.localeCompare(b.date)).map(plan => {
+                    const status = getPlanStatus(plan);
+                    return (
+                      <div 
+                        key={plan.id} 
+                        className={`flex items-center justify-between p-5 border rounded-2xl shadow-lg transition-all group relative ${
+                          status === 'success' 
+                            ? 'bg-emerald-50 border-emerald-200 shadow-emerald-500/5 hover:border-emerald-400' 
+                            : status === 'error'
+                            ? 'bg-red-50 border-red-200 shadow-red-500/5 hover:border-red-400'
+                            : 'bg-white border-indigo-100 shadow-indigo-500/5 hover:border-amber-400'
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${
+                            status === 'success' ? 'bg-emerald-100 text-emerald-600' :
+                            status === 'error' ? 'bg-red-100 text-red-600' :
+                            'bg-amber-50 text-amber-600'
+                          }`}>
+                            <CalendarClock className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <p className={`text-base font-black ${
+                              status === 'success' ? 'text-emerald-900' :
+                              status === 'error' ? 'text-red-900' :
+                              'text-slate-900'
+                            }`}>
+                              {formatDateWithDay(plan.date)}
+                            </p>
+                            <p className={`text-[10px] font-bold uppercase tracking-widest ${
+                              status === 'success' ? 'text-emerald-500' :
+                              status === 'error' ? 'text-red-500' :
+                              'text-slate-700'
+                            }`}>
+                              {status === 'success' ? (language === 'zh' ? '已完成计划 / COMPLETED' : 'Mission Completed') : 
+                               status === 'error' ? (language === 'zh' ? '未例行或逾期 / LATE OR MISSED' : 'Late or Missed') :
+                               (language === 'zh' ? '已计划 / PLANNED' : 'Planned')}
+                            </p>
+                          </div>
+                        </div>
+                        {plan.date >= new Date().toISOString().split('T')[0] && (
+                          <button 
+                            onClick={() => handleDeletePlan(plan.id, plan.date)}
+                            className="flex items-center gap-2 px-4 py-2 bg-white/50 text-slate-700 rounded-xl hover:bg-red-600 hover:text-white transition-all font-bold text-xs uppercase tracking-widest border border-transparent shadow-sm"
+                            title="Delete / 删除"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            {language === 'zh' ? '删除' : 'Delete'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {plans.length === 0 && (
+                    <div className="sm:col-span-2 text-center py-8 text-slate-600 italic text-sm">
+                      {t('noEntries')}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <ReviewEmployeeTaskHistory employeeId={selectedEmployee.id} />
+
+              {/* History Table */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print-area">
+                <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-slate-800">{t('dailyEntries')}</h3>
+                  <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full">
+                    {entries.length} {entries.length === 1 ? 'Record' : 'Records'}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-slate-50/50 text-left">
+                        <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">{t('date')} <span className="text-[10px] font-normal">日期</span></th>
+                        <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">{t('totalHours')} <span className="text-[10px] font-normal">总小时</span></th>
+                        <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">{t('multiplier')} <span className="text-[10px] font-normal">倍率</span></th>
+                        <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">{t('remarks')} <span className="text-[10px] font-normal">备注</span></th>
+                        <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">{t('verified')} <span className="text-[10px] font-normal">状态</span></th>
+                        <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest text-right">{t('actions')} <span className="text-[10px] font-normal">操作</span></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {entries.sort((a, b) => a.date.localeCompare(b.date)).map(entry => {
+                        return (
+                          <tr 
+                            key={entry.id} 
+                            className="hover:bg-slate-50/50 transition-all"
+                          >
+                            <td className="px-8 py-4 font-bold text-slate-700">
+                              {formatDateWithDay(entry.date)}
+                            </td>
+                            <td className="px-8 py-4">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-baseline gap-1">
+                                  <span className="font-black text-lg text-slate-900">{entry.totalHours.toFixed(1)}</span>
+                                  <span className="text-[10px] font-bold text-slate-700 uppercase">h</span>
+                                </div>
+                                <div className="text-[10px] font-bold px-2 py-0.5 rounded-lg w-fit whitespace-nowrap bg-indigo-50 text-indigo-500">
+                                  {formatTime(entry.startTime)} - {formatTime(entry.endTime)}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-8 py-4">
+                              <span className={`px-2 py-1 rounded-lg font-normal text-xs ${entry.multiplier === 2.0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                                {entry.multiplier === 2.0 ? t('overtime20') : t('overtime15')}
+                              </span>
+                            </td>
+                            <td className="px-8 py-4">
+                              <p className="text-sm text-slate-500 truncate max-w-[150px]" title={entry.remarks}>
+                                {entry.remarks || '-'}
+                              </p>
+                            </td>
+                            <td className="px-8 py-4">
+                              {entry.verified ? (
+                                <span className="status-badge badge-verified">
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  {t('verified')}
+                                </span>
+                              ) : entry.status === 'rejected' ? (
+                                <span className="status-badge bg-red-100 text-red-700 border border-red-200">
+                                  <AlertCircle className="w-4 h-4" />
+                                  {t('reject') || 'Rejected'}
+                                </span>
+                              ) : (
+                                <span className="status-badge badge-pending">
+                                  {t('unverified')}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-8 py-4 text-right">
+                              {!entry.verified && (
+                                <div className="flex items-center justify-end gap-2 text-slate-500">
+                                  {deletingId === entry.id ? (
+                                    <div className="flex items-center gap-2 bg-red-50 p-1 rounded-lg border border-red-100">
+                                      <button
+                                        onClick={() => handleDeleteEntry(entry.id)}
+                                        className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-md hover:bg-red-700 transition-colors"
+                                      >
+                                        {t('confirm')}
+                                      </button>
+                                      <button
+                                        onClick={() => setDeletingId(null)}
+                                        className="px-3 py-1.5 bg-slate-200 text-slate-600 text-xs font-bold rounded-md hover:bg-slate-300 transition-colors"
+                                      >
+                                        {t('cancel')}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button
+                                        onClick={() => setEditingEntry(entry)}
+                                        className="p-3 rounded-xl border border-indigo-200 transition-all font-bold text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white shadow-sm"
+                                        title={t('edit')}
+                                      >
+                                        <Pencil className="w-6 h-6" />
+                                      </button>
+                                      <button
+                                        onClick={() => setDeletingId(entry.id)}
+                                        className="p-3 rounded-xl border border-slate-200 transition-all font-bold text-xs bg-slate-50 text-slate-700 hover:bg-red-600 hover:text-white shadow-sm"
+                                        title={t('delete')}
+                                      >
+                                        <Trash2 className="w-6 h-6" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {entries.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-8 py-12 text-center text-slate-600 italic">
+                            {t('noEntries')}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    {entries.length > 0 && (
+                      <tfoot className="bg-slate-50/50 border-t-2 border-slate-100">
+                        <tr>
+                          <td className="px-8 py-6 text-sm font-bold text-slate-500 uppercase tracking-widest bg-slate-100/50">
+                            {t('totalHours')} <span className="text-[10px] font-normal block opacity-60">加班总时长</span>
+                          </td>
+                          <td className="px-8 py-6" colSpan={4}>
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-3xl font-black text-vibrant">
+                                {entries.reduce((acc, curr) => acc + (curr.multiplier === 2.0 ? 0 : curr.totalHours), 0).toFixed(1)}
+                              </span>
+                              <span className="text-sm font-bold text-indigo-400 uppercase tracking-widest">Total Hours / 总小时</span>
+                            </div>
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+
+      {/* Edit Modal */}
+      <AnimatePresence>
+        {editingEntry && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="text-xl font-black text-slate-900">{t('edit')}</h3>
+                <button 
+                  onClick={() => setEditingEntry(null)}
+                  className="p-2 hover:bg-slate-100 rounded-xl text-slate-700 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateEntry} className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-slate-800 uppercase tracking-widest">{t('date')}</label>
                   <div className="relative group">
