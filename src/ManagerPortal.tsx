@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext';
 import { useTranslation } from './lib/LanguageContext';
 import { employeeService, overtimeService, reportService, adminService, planService } from './lib/services';
 import { UserProfile, OvertimeEntry, OvertimeSummary, OvertimePlan } from './types';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import SignatureCanvas from 'react-signature-canvas';
 import { formatDate, formatTime, parseDate, formatDateFriendly, formatDateWithDay, formatMonth } from './lib/dateUtils';
 import { 
@@ -31,7 +30,6 @@ import {
   Home,
   AlertCircle,
   Info,
-  Calculator,
   Map as MapIcon,
   Image as ImageIcon,
   Network
@@ -40,8 +38,7 @@ import RosterBoard from './RosterBoard';
 import OrgChart from './components/OrgChart';
 import ManagerControlDashboard from './components/ManagerControlDashboard';
 import { getSingaporeMonth } from './lib/overtimeRisk';
-import { getEmploymentType, setReviewEmploymentType, type ReviewEmploymentType } from './lib/reviewTasks';
-import { ReviewMonthlyTaskSubmissions } from './components/review/TaskWorkflow';
+import { getEmploymentType, getReviewTaskSubmissions, loadReviewTasks, REVIEW_TASKS_CHANGED, setReviewEmploymentType, type ReviewEmploymentType, type ReviewTaskSubmission } from './lib/reviewTasks';
 
 export default function ManagerPortal() {
   const { logout, user } = useAuth();
@@ -49,6 +46,7 @@ export default function ManagerPortal() {
   const { t } = useTranslation();
   const [employees, setEmployees] = useState<UserProfile[]>([]);
   const [entries, setEntries] = useState<OvertimeEntry[]>([]);
+  const [reviewSubmissions, setReviewSubmissions] = useState<ReviewTaskSubmission[]>(() => getReviewTaskSubmissions(loadReviewTasks()));
   const [plans, setPlans] = useState<OvertimePlan[]>([]);
   const [summaries, setSummaries] = useState<OvertimeSummary[]>([]);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'profiles' | 'report' | 'settings' | 'planning' | 'roster' | 'orgchart'>('dashboard');
@@ -80,9 +78,6 @@ export default function ManagerPortal() {
   const [confirmedEmployees, setConfirmedEmployees] = useState<Set<string>>(new Set());
   const [employeeSignatures, setEmployeeSignatures] = useState<Record<string, { data: string, type: 'upload' | 'text' | 'draw', createdAt?: any }>>({});
   
-  // Multi-selection state for reporting
-  const [selectedEntryIds, setSelectedEntryIds] = useState<Set<string>>(new Set());
-  
   // Global Signature State
   const [globalReport, setGlobalReport] = useState<any>(null);
   const [signatureMethod, setSignatureMethod] = useState<'draw' | 'upload' | 'text'>('draw');
@@ -95,14 +90,63 @@ export default function ManagerPortal() {
   }, [selectedMonth]);
 
   useEffect(() => {
-    calculateSummaries();
-  }, [entries, employees]);
+    const refreshReviewSubmissions = () => setReviewSubmissions(getReviewTaskSubmissions(loadReviewTasks()));
+    window.addEventListener(REVIEW_TASKS_CHANGED, refreshReviewSubmissions);
+    window.addEventListener('storage', refreshReviewSubmissions);
+    return () => {
+      window.removeEventListener(REVIEW_TASKS_CHANGED, refreshReviewSubmissions);
+      window.removeEventListener('storage', refreshReviewSubmissions);
+    };
+  }, []);
+
+  useEffect(() => {
+    const monthlySubmissions = reviewSubmissions.filter((submission) => submission.taskDate.startsWith(selectedMonth));
+    const summaryMap = new Map<string, OvertimeSummary>();
+
+    employees.forEach((employee) => {
+      summaryMap.set(employee.id, {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        totalHours: 0,
+        entryCount: 0,
+        averageHours: 0,
+        unverifiedCount: 0,
+        unverifiedHours: 0
+      });
+    });
+
+    monthlySubmissions.forEach((submission) => {
+      const summary = summaryMap.get(submission.employeeId) || {
+        employeeId: submission.employeeId,
+        employeeName: submission.employeeName,
+        totalHours: 0,
+        entryCount: 0,
+        averageHours: 0,
+        unverifiedCount: 0,
+        unverifiedHours: 0
+      };
+      const effectiveHours = submission.employmentType === 'part-time'
+        ? submission.effectiveWorkedHours || 0
+        : submission.effectiveOtHours || 0;
+      summary.totalHours += effectiveHours;
+      summary.entryCount += 1;
+      summary.averageHours = summary.totalHours / summary.entryCount;
+      summaryMap.set(submission.employeeId, summary);
+    });
+
+    setSummaries(Array.from(summaryMap.values()));
+  }, [employees, reviewSubmissions, selectedMonth]);
+
+  useEffect(() => {
+    setSelectedEmployeeSummary((current) => current
+      ? summaries.find((summary) => summary.employeeId === current.employeeId) || current
+      : null);
+  }, [summaries]);
 
   useEffect(() => {
     fetchGlobalReport();
     fetchManagerConfirmations();
     setSelectedEmployeeSummary(null);
-    setSelectedEntryIds(new Set());
   }, [selectedMonth]);
 
   useEffect(() => {
@@ -117,30 +161,12 @@ export default function ManagerPortal() {
     fetchSupervisorReport();
   }, [selectedEmployeeSummary, selectedMonth]);
 
-  const handleEntryClick = (entryId: string, event: React.MouseEvent) => {
-    if (event.ctrlKey || event.metaKey) {
-      const newSelection = new Set(selectedEntryIds);
-      if (newSelection.has(entryId)) {
-        newSelection.delete(entryId);
-      } else {
-        newSelection.add(entryId);
-      }
-      setSelectedEntryIds(newSelection);
-    } else {
-      if (selectedEntryIds.size === 1 && selectedEntryIds.has(entryId)) {
-        setSelectedEntryIds(new Set());
-      } else {
-        setSelectedEntryIds(new Set([entryId]));
-      }
-    }
-  };
-
-  const totalSelectedHours = React.useMemo(() => {
-    return Array.from(selectedEntryIds).reduce((acc, id) => {
-      const entry = entries.find(e => e.id === id);
-      return acc + (entry ? entry.totalHours : 0);
-    }, 0);
-  }, [selectedEntryIds, entries]);
+  const selectedReviewSubmissions = React.useMemo(() => {
+    if (!selectedEmployeeSummary) return [];
+    return reviewSubmissions
+      .filter((submission) => submission.employeeId === selectedEmployeeSummary.employeeId && submission.taskDate.startsWith(selectedMonth))
+      .sort((a, b) => a.taskDate.localeCompare(b.taskDate));
+  }, [reviewSubmissions, selectedEmployeeSummary?.employeeId, selectedMonth]);
 
   const isMonthEnd = () => {
     const today = new Date();
@@ -343,59 +369,6 @@ export default function ManagerPortal() {
     await fetchData();
     setDeletingPlanId(null);
     setIsSubmitting(false);
-  };
-
-  const handleVerifyEntry = async (id: string) => {
-    await overtimeService.verifyEntry(id);
-    await fetchData();
-  };
-
-  const handleRejectEntry = async (id: string) => {
-    await overtimeService.rejectEntry(id);
-    await fetchData();
-  };
-
-  const calculateSummaries = () => {
-    const monthlyEntries = entries.filter(e => e.date.startsWith(selectedMonth));
-    
-    const summaryMap = new Map<string, OvertimeSummary>();
-    
-    employees.forEach(emp => {
-      summaryMap.set(emp.id, {
-        employeeId: emp.id,
-        employeeName: emp.name,
-        totalHours: 0,
-        entryCount: 0,
-        averageHours: 0,
-        unverifiedCount: 0,
-        unverifiedHours: 0
-      });
-    });
-
-    monthlyEntries.forEach(entry => {
-      const summary = summaryMap.get(entry.employeeId);
-      if (summary) {
-        // Only add to total hours if multiplier is not 2.0
-        if (entry.multiplier !== 2.0) {
-          summary.totalHours += entry.totalHours;
-        }
-        summary.entryCount += 1;
-        if (!entry.verified) {
-          summary.unverifiedCount += 1;
-          if (entry.multiplier !== 2.0) {
-            summary.unverifiedHours += entry.totalHours;
-          }
-        }
-      }
-    });
-
-    summaryMap.forEach(summary => {
-      if (summary.entryCount > 0) {
-        summary.averageHours = summary.totalHours / summary.entryCount;
-      }
-    });
-
-    setSummaries(Array.from(summaryMap.values()));
   };
 
   const handleCreateEmployee = async (e: React.FormEvent) => {
@@ -718,8 +691,6 @@ export default function ManagerPortal() {
               />
             </div>
 
-            <ReviewMonthlyTaskSubmissions month={selectedMonth} />
-
             {!selectedEmployeeSummary ? (
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="overflow-x-auto">
@@ -872,7 +843,7 @@ export default function ManagerPortal() {
                     className="flex items-center gap-2 text-slate-700 hover:text-slate-900 font-bold transition-all group"
                   >
                     <X className="w-5 h-5 group-hover:rotate-90 transition-transform" />
-                    Back to Overview / 返回概览
+                    Back to List / 返回列表
                   </button>
 
                   <div className="flex items-center gap-3">
@@ -896,12 +867,13 @@ export default function ManagerPortal() {
                 </div>
 
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print-area">
-                  <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50" data-testid="review-employee-monthly-detail">
                     <div>
                       <h4 className="text-2xl font-black text-slate-900" translate="no">{selectedEmployeeSummary.employeeName}</h4>
                       <p className="text-slate-500 font-bold uppercase tracking-widest text-xs mt-1">
-                        Detailed Report for {selectedMonth} <span className="text-slate-300 mx-2">|</span> {selectedEmployeeSummary.totalHours.toFixed(1)}h Total (x1.5 only)
+                        Detailed Report for {selectedMonth} <span className="text-slate-300 mx-2">|</span> {selectedEmployeeSummary.totalHours.toFixed(1)}h Total
                       </p>
+                      <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-indigo-600">Task-assigned review submissions · Source: otpro_review_tasks_v4</p>
                     </div>
                     {confirmedEmployees.has(selectedEmployeeSummary.employeeId) && (
                       <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl border border-emerald-100">
@@ -916,166 +888,50 @@ export default function ManagerPortal() {
                       <thead>
                         <tr className="bg-slate-50/30 text-left">
                           <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">{t('date')}</th>
-                          <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">{t('time')}</th>
-                          <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">{t('multiplier')}</th>
-                          <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">{t('totalHours')}</th>
+                          <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">Task / Workstation</th>
+                          <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">Type</th>
+                          <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">Effective Hours</th>
                           <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">Status / 状态</th>
-                          <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">{t('remarks')}</th>
-                          <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest text-right no-print">{t('actions')}</th>
+                          <th className="px-8 py-4 text-sm font-black text-slate-900 uppercase tracking-widest">Correction</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {entries
-                          .filter(e => e.employeeId === selectedEmployeeSummary.employeeId && e.date.startsWith(selectedMonth))
-                          .sort((a, b) => a.date.localeCompare(b.date))
-                          .map(entry => {
-                            const isSelected = selectedEntryIds.has(entry.id);
-                            return (
-                              <tr 
-                                key={entry.id} 
-                                onClick={(e) => handleEntryClick(entry.id, e)}
-                                className={`transition-all cursor-pointer select-none ${
-                                  isSelected 
-                                    ? 'bg-indigo-50 hover:bg-indigo-100' 
-                                    : 'hover:bg-slate-50/30'
-                                }`}
-                              >
-                                <td className="px-8 py-5 font-bold text-slate-800">
-                                  <div className="flex items-center gap-3">
-                                    {isSelected && (
-                                      <motion.div 
-                                        initial={{ scale: 0 }}
-                                        animate={{ scale: 1 }}
-                                        className="w-2 h-2 rounded-full bg-indigo-600 shrink-0"
-                                      />
-                                    )}
-                                    {formatDateWithDay(entry.date)}
-                                  </div>
-                                </td>
-                                <td className="px-8 py-5 text-slate-500 font-medium">
-                                  {formatTime(entry.startTime)} - {formatTime(entry.endTime)}
-                                </td>
-                                <td className="px-8 py-5">
-                                  <span className={`px-2 py-0.5 rounded-lg font-normal text-xs ${entry.multiplier === 2.0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                                    {entry.multiplier === 2.0 ? t('overtime20') : t('overtime15')}
-                                  </span>
-                                </td>
-                                <td className="px-8 py-5">
-                                  <span className={`font-black ${isSelected ? 'text-indigo-700' : 'text-indigo-600'}`}>{entry.totalHours}h</span>
-                                </td>
-                                <td className="px-8 py-5">
-                                  {entry.verified ? (
-                                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1">
-                                      <CheckCircle2 className="w-4 h-4" />
-                                      OK
-                                    </span>
-                                  ) : entry.status === 'rejected' ? (
-                                    <span className="text-[10px] font-black text-red-500 uppercase tracking-widest flex items-center gap-1">
-                                      <X className="w-4 h-4" />
-                                      {t('rejected') || 'Rejected'}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-1">
-                                      <AlertCircle className="w-4 h-4" />
-                                      {t('pending') || 'Pending'}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-8 py-5 text-slate-400 italic text-sm">{entry.remarks || '-'}</td>
-                                <td className="px-8 py-5 text-right no-print">
-                                  <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
-                                    {!entry.verified && entry.status !== 'rejected' && (
-                                      <>
-                                        <button 
-                                          onClick={() => handleVerifyEntry(entry.id)}
-                                          className="p-3 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all shadow-sm border border-emerald-100 bg-emerald-50/20"
-                                          title="Verify"
-                                        >
-                                          <CheckCircle2 className="w-6 h-6" />
-                                        </button>
-                                        <button 
-                                          onClick={() => handleRejectEntry(entry.id)}
-                                          className="p-3 text-amber-600 hover:bg-amber-50 rounded-xl transition-all shadow-sm border border-amber-100 bg-amber-50/20"
-                                          title="Reject"
-                                        >
-                                          <X className="w-6 h-6" />
-                                        </button>
-                                      </>
-                                    )}
-                                    <button 
-                                      onClick={() => setEditingEntry(entry)}
-                                      className="p-3 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl transition-all shadow-md border border-indigo-200 bg-white"
-                                      title="Edit"
-                                    >
-                                      <PenTool className="w-6 h-6" />
-                                    </button>
-                                    <button 
-                                      onClick={() => setDeletingEntryId(entry.id)}
-                                      className="p-3 text-slate-600 hover:text-white hover:bg-red-600 rounded-xl transition-all shadow-md border border-slate-200 bg-white"
-                                      title="Delete"
-                                    >
-                                      <Trash2 className="w-6 h-6" />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
+                        {selectedReviewSubmissions.map((submission) => {
+                          const partTime = submission.employmentType === 'part-time';
+                          const effectiveHours = partTime ? submission.effectiveWorkedHours || 0 : submission.effectiveOtHours || 0;
+                          const corrected = partTime
+                            ? submission.correctedWorkedHours !== null && submission.correctedWorkedHours !== undefined
+                            : submission.correctedOtHours !== null && submission.correctedOtHours !== undefined;
+                          return (
+                            <tr key={`${submission.taskId}-${submission.employeeId}`} data-task-record={`${submission.taskId}-${submission.employeeId}`}>
+                              <td className="px-8 py-5 font-bold text-slate-800">{formatDateWithDay(submission.taskDate)}</td>
+                              <td className="px-8 py-5">
+                                <p className="font-bold text-slate-800">{submission.actualWorkstation}</p>
+                                <p className="mt-1 text-[10px] font-bold text-slate-500">TASK {submission.taskId}</p>
+                              </td>
+                              <td className="px-8 py-5 text-xs font-black text-slate-600">{partTime ? 'PART-TIME WORKED HOURS · NO 1.5×' : 'FULL-TIME OT'}</td>
+                              <td className="px-8 py-5"><span className="font-black text-indigo-600">{effectiveHours.toFixed(1)}h</span></td>
+                              <td className="px-8 py-5"><span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">TASK ASSIGNED / VERIFIED</span></td>
+                              <td className="px-8 py-5">{corrected ? <span className="rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-800">CORRECTED</span> : <span className="text-xs font-bold text-slate-400">—</span>}</td>
+                            </tr>
+                          );
+                        })}
+                        {selectedReviewSubmissions.length === 0 && (
+                          <tr><td colSpan={6} className="px-8 py-12 text-center text-slate-500">No task-assigned submissions for this month.</td></tr>
+                        )}
                       </tbody>
                       <tfoot>
                         <tr className="bg-slate-50/50">
-                          <td colSpan={2} className="px-8 py-6 text-sm font-black text-slate-400 uppercase tracking-widest text-right">
+                          <td colSpan={3} className="px-8 py-6 text-sm font-black text-slate-400 uppercase tracking-widest text-right">
                              Monthly Total / 月总数
                           </td>
-                          <td colSpan={2} className="px-8 py-6 font-black text-2xl text-indigo-600">
+                          <td colSpan={3} className="px-8 py-6 font-black text-2xl text-indigo-600" data-testid="review-employee-monthly-total">
                              {selectedEmployeeSummary.totalHours.toFixed(1)}h
                           </td>
                         </tr>
                       </tfoot>
                     </table>
                   </div>
-
-                  {/* Floating Selection Summary */}
-                  <AnimatePresence>
-                    {selectedEntryIds.size > 0 && (
-                      <motion.div
-                        initial={{ y: 100, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        exit={{ y: 100, opacity: 0 }}
-                        className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] no-print"
-                      >
-                        <div className="bg-slate-900/90 backdrop-blur-xl text-white px-8 py-5 rounded-[32px] shadow-2xl flex items-center gap-10 border border-slate-800">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                              <Calculator className="w-6 h-6 text-white" />
-                            </div>
-                            <div>
-                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Cumulative Sum / 累积总时长</p>
-                               <div className="flex items-baseline gap-2">
-                                  <span className="text-3xl font-black text-white">{totalSelectedHours.toFixed(1)}</span>
-                                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Hours</span>
-                               </div>
-                            </div>
-                          </div>
-                          
-                          <div className="h-10 w-px bg-slate-800"></div>
-
-                          <div className="flex flex-col">
-                             <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest leading-none mb-1">Selected / 已选</p>
-                             <p className="text-sm font-bold text-indigo-400">{selectedEntryIds.size} records</p>
-                          </div>
-
-                          <button 
-                            onClick={() => setSelectedEntryIds(new Set())}
-                            className="bg-slate-800 hover:bg-red-500/20 hover:text-red-400 p-2.5 rounded-xl transition-all"
-                            title="Clear / 清除"
-                          >
-                            <X className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
 
                   {/* Supervisor Signature Result */}
                   <div className="p-8 border-t border-slate-100 bg-slate-50/20">
