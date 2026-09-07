@@ -805,17 +805,17 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
 
               <ReviewEmployeeTaskHistory employeeId={selectedEmployee.id} />
 
-              {/* History Table */}
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print-area">
-                <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
+              {/* Legacy history remains available as historical reference only. */}
+              <details className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print-area">
+                <summary className="px-8 py-6 border-b border-slate-100 flex cursor-pointer items-center justify-between">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-800">Legacy manual OT / 旧手动加班记录</h3>
-                    <p className="mt-1 text-xs font-bold text-slate-500">LEGACY / UNASSIGNED · SEPARATE FROM V1.3 TASK HISTORY</p>
+                    <h3 className="text-lg font-bold text-slate-800">LEGACY OT HISTORY / 旧版历史记录</h3>
+                    <p className="mt-1 text-xs font-bold text-slate-500">LEGACY / UNASSIGNED · NOT USED FOR V1.3 TOTALS</p>
                   </div>
                   <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full">
                     {entries.length} {entries.length === 1 ? 'Record' : 'Records'}
                   </span>
-                </div>
+                </summary>
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
@@ -929,26 +929,9 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
                         </tr>
                       )}
                     </tbody>
-                    {entries.length > 0 && (
-                      <tfoot className="bg-slate-50/50 border-t-2 border-slate-100">
-                        <tr>
-                          <td className="px-8 py-6 text-sm font-bold text-slate-500 uppercase tracking-widest bg-slate-100/50">
-                            Legacy total <span className="text-[10px] font-normal block opacity-60">旧手动记录总时长</span>
-                          </td>
-                          <td className="px-8 py-6" colSpan={4}>
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-3xl font-black text-vibrant">
-                                {entries.reduce((acc, curr) => acc + (curr.multiplier === 2.0 ? 0 : curr.totalHours), 0).toFixed(1)}
-                              </span>
-                              <span className="text-sm font-bold text-indigo-400 uppercase tracking-widest">Legacy only / 仅旧记录</span>
-                            </div>
-                          </td>
-                        </tr>
-                      </tfoot>
-                    )}
                   </table>
                 </div>
-              </div>
+              </details>
             </motion.div>
           )}
         </AnimatePresence>
