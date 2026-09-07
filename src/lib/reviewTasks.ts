@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 55871)
+Total output lines: 3175
+
 export type ReviewTaskType = 'output' | 'non-output';
 export type ReviewAssignmentMode = 'ot-task' | 'work-shift';
 export type ReviewEmploymentType = 'full-time' | 'part-time';
@@ -7,12 +10,21 @@ export type ReviewCompletionStatus = 'COMPLETED' | 'PARTIALLY COMPLETED' | 'NOT 
 
 export interface ReviewEmployee { id: string; name: string; department?: string; employmentType?: ReviewEmploymentType }
 export interface ReviewCorrection { originalHours: number; correctedHours: number; originalStart?: string; originalEnd?: string; correctedStart?: string; correctedEnd?: string; note?: string; correctedAt: string }
-export interface ReviewParticipant { employeeId: string; employeeName: string; employmentType?: ReviewEmploymentType; status: ParticipantStatus; assignedWorkstation: string; actualWorkstation: string; startTime?: string; endTime?: string; actualStart?: string; actualEnd?: string; actualHours: number; workedHours?: number; submittedAt?: string; reviewPinVerified?: boolean; correction?: ReviewCorrection }
+export interface ReviewParticipant { employeeId: string; employeeName: string; employmentType?: ReviewEmploymentType; status: ParticipantStatus; assignedWorkstation: string; actualWorkstation: string; startTime?: string; endTime?: string; actualStart?: string; actualEnd?: string; actualHours: number; workedHours?: number; originalOtHours?: number; correctedOtHours?: number | null; effectiveOtHours?: number; originalWorkedHours?: number; correctedWorkedHours?: number | null; effectiveWorkedHours?: number; correctionNote?: string; correctedAt?: string; submittedAt?: string; reviewPinVerified?: boolean; correction?: ReviewCorrection }
 export interface ReviewTask {
   id: string; date: string; department: string; workstation: string; product: string; batchNo: string;
   plannedStart: string; plannedEnd: string; taskType: ReviewTaskType; assignmentMode?: ReviewAssignmentMode; targetRequirement: string;
   actualResult?: string; completionStatus?: ReviewCompletionStatus; supervisorNote?: string;
   status: ReviewTaskStatus; participants: ReviewParticipant[]; createdAt: string; closedAt?: string; closedByReviewRole?: 'SUPERVISOR';
+}
+
+export interface ReviewTaskSubmission {
+  taskId: string; employeeId: string; employeeName: string; employmentType: ReviewEmploymentType;
+  taskDate: string; assignedWorkstation: string; actualWorkstation: string; originalOtHours?: number;
+  correctedOtHours?: number | null; effectiveOtHours?: number; originalWorkedHours?: number;
+  correctedWorkedHours?: number | null; effectiveWorkedHours?: number; originalStart?: string;
+  originalEnd?: string; correctedStart?: string; correctedEnd?: string; submittedAt?: string;
+  correctedAt?: string; correctionNote?: string; submissionStatus: 'SUBMITTED';
 }
 
 export const REVIEW_STORAGE_KEY = 'otpro_review_tasks_v4';
@@ -84,13 +96,35 @@ export const canPartTimeEmployeeSubmitWorkHours = (employeeId: string, task: Rev
 export const isReviewPinValid = (candidate: string) => candidate === REVIEW_PIN;
 export const applyReviewSubmission = (participant: ReviewParticipant, actualHours: number, submittedAt: string): { accepted: boolean; participant: ReviewParticipant } => {
   if (participant.status === 'COMPLETED' || !Number.isFinite(actualHours) || actualHours < 0.5 || actualHours > 12) return { accepted: false, participant };
-  return { accepted: true, participant: { ...participant, status: 'COMPLETED', actualHours, submittedAt, reviewPinVerified: true } };
+  return { accepted: true, participant: { ...participant, employmentType: 'full-time', status: 'COMPLETED', actualHours, originalOtHours: actualHours, correctedOtHours: null, effectiveOtHours: actualHours, submittedAt, reviewPinVerified: true } };
 };
 export const calculateWorkedHours = (start: string, end: string): number | null => { const [startHour, startMinute] = start.split(':').map(Number); const [endHour, endMinute] = end.split(':').map(Number); const minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute); return minutes > 0 ? minutes / 60 : null; };
-export const applyPartTimeSubmission = (participant: ReviewParticipant, actualStart: string, actualEnd: string, submittedAt: string): { accepted: boolean; participant: ReviewParticipant } => { const workedHours = calculateWorkedHours(actualStart, actualEnd); if (participant.status === 'COMPLETED' || workedHours === null) return { accepted: false, participant }; return { accepted: true, participant: { ...participant, employmentType: 'part-time', status: 'COMPLETED', actualStart, actualEnd, workedHours, actualHours: 0, submittedAt, reviewPinVerified: true } }; };
+export const applyPartTimeSubmission = (participant: ReviewParticipant, actualStart: string, actualEnd: string, submittedAt: string): { accepted: boolean; participant: ReviewParticipant } => { const workedHours = calculateWorkedHours(actualStart, actualEnd); if (participant.status === 'COMPLETED' || workedHours === null) return { accepted: false, participant }; return { accepted: true, participant: { ...participant, employmentType: 'part-time', status: 'COMPLETED', actualStart, actualEnd, workedHours, actualHours: 0, originalWorkedHours: workedHours, correctedWorkedHours: null, effectiveWorkedHours: workedHours, submittedAt, reviewPinVerified: true } }; };
 export const hasTaskSubmissions = (task: ReviewTask) => task.participants.some((participant) => participant.status === 'COMPLETED');
 export const canRemoveParticipant = (participant: ReviewParticipant) => participant.status !== 'COMPLETED';
-export const getEffectiveParticipantHours = (participant: ReviewParticipant) => participant.status !== 'COMPLETED' ? 0 : participant.correction?.correctedHours ?? (getParticipantEmploymentType(participant) === 'part-time' ? participant.workedHours || 0 : participant.actualHours);
+export const getOriginalParticipantHours = (participant: ReviewParticipant) => getParticipantEmploymentType(participant) === 'part-time' ? participant.originalWorkedHours ?? participant.workedHours ?? 0 : participant.originalOtHours ?? participant.actualHours;
+export const getEffectiveParticipantHours = (participant: ReviewParticipant) => {
+  if (participant.status !== 'COMPLETED') return 0;
+  return getParticipantEmploymentType(participant) === 'part-time'
+    ? participant.effectiveWorkedHours ?? participant.correction?.correctedHours ?? participant.workedHours ?? 0
+    : participant.effectiveOtHours ?? participant.correction?.correctedHours ?? participant.actualHours;
+};
+export const applyReviewCorrection = (participant: ReviewParticipant, correctedHours: number, note: string, correctedStart?: string, correctedEnd?: string): ReviewParticipant => {
+  const employmentType = getParticipantEmploymentType(participant);
+  const originalHours = participant.correction?.originalHours ?? getOriginalParticipantHours(participant);
+  const correctedAt = new Date().toISOString();
+  const correction: ReviewCorrection = { originalHours, correctedHours, originalStart: participant.actualStart, originalEnd: participant.actualEnd, correctedStart, correctedEnd, note, correctedAt };
+  return employmentType === 'part-time'
+    ? { ...participant, originalWorkedHours: originalHours, correctedWorkedHours: correctedHours, effectiveWorkedHours: correctedHours, correctionNote: note, correctedAt, correction }
+    : { ...participant, originalOtHours: originalHours, correctedOtHours: correctedHours, effectiveOtHours: correctedHours, correctionNote: note, correctedAt, correction };
+};
+export const getReviewTaskSubmissions = (tasks: ReviewTask[]): ReviewTaskSubmission[] => tasks.flatMap((task) => task.participants.flatMap((participant) => {
+  if (participant.status !== 'COMPLETED') return [];
+  const employmentType = getParticipantEmploymentType(participant);
+  const originalHours = getOriginalParticipantHours(participant);
+  const effectiveHours = getEffectiveParticipantHours(participant);
+  return [{ taskId: task.id, employeeId: participant.employeeId, employeeName: participant.employeeName, employmentType, taskDate: task.date, assignedWorkstation: participant.assignedWorkstation, actualWorkstation: participant.actualWorkstation, originalOtHours: employmentType === 'full-time' ? originalHours : undefined, correctedOtHours: employmentType === 'full-time' ? participant.correctedOtHours ?? participant.correction?.correctedHours ?? null : undefined, effectiveOtHours: employmentType === 'full-time' ? effectiveHours : undefined, originalWorkedHours: employmentType === 'part-time' ? originalHours : undefined, correctedWorkedHours: employmentType === 'part-time' ? participant.correctedWorkedHours ?? participant.correction?.correctedHours ?? null : undefined, effectiveWorkedHours: employmentType === 'part-time' ? effectiveHours : undefined, originalStart: participant.actualStart, originalEnd: participant.actualEnd, correctedStart: participant.correction?.correctedStart, correctedEnd: participant.correction?.correctedEnd, submittedAt: participant.submittedAt, correctedAt: participant.correctedAt ?? participant.correction?.correctedAt, correctionNote: participant.correctionNote ?? participant.correction?.note, submissionStatus: 'SUBMITTED' }];
+}));
 
 export const parseProductionQuantity = (text?: string): number | null => {
   if (!text) return null;

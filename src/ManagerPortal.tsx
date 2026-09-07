@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext';
@@ -40,6 +41,7 @@ import OrgChart from './components/OrgChart';
 import ManagerControlDashboard from './components/ManagerControlDashboard';
 import { getSingaporeMonth } from './lib/overtimeRisk';
 import { getEmploymentType, setReviewEmploymentType, type ReviewEmploymentType } from './lib/reviewTasks';
+import { ReviewMonthlyTaskSubmissions } from './components/review/TaskWorkflow';
 
 export default function ManagerPortal() {
   const { logout, user } = useAuth();
@@ -715,6 +717,8 @@ export default function ManagerPortal() {
                 className="px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/10 font-bold text-slate-900"
               />
             </div>
+
+            <ReviewMonthlyTaskSubmissions month={selectedMonth} />
 
             {!selectedEmployeeSummary ? (
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
