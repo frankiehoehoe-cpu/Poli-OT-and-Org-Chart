@@ -24,6 +24,7 @@ import LoginPage from './LoginPage';
 import EmployeePortal from './EmployeePortal';
 import OrgChart from './components/OrgChart';
 import { PublicTonightAssignments } from './components/review/TaskWorkflow';
+import { PublicShiftNotice } from './components/review/ShiftPlanning';
 
 export default function LandingPage() {
   const { t, language, setLanguage } = useTranslation();
@@ -183,6 +184,7 @@ export default function LandingPage() {
           <div><p className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600">OT PRO</p><h1 className="text-2xl font-black text-slate-900 sm:text-3xl">{t('publicOverview')} <span className="text-slate-400">/ 公共概览</span></h1></div>
         </header>
 
+        <PublicShiftNotice />
         <PublicTonightAssignments />
 
         {/* Current Month Calendar */}

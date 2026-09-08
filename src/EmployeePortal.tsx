@@ -7,6 +7,7 @@ import { UserProfile, OvertimeEntry, OvertimePlan } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDate, formatTime, parseDate, formatDateFriendly, formatDateWithDay } from './lib/dateUtils';
 import { ReviewEmployeeTaskHistory } from './components/review/TaskWorkflow';
+import { PartTimeWorkSchedule } from './components/review/ShiftPlanning';
 import { 
   Users, 
   Clock, 
@@ -803,6 +804,7 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
                 </div>
               </div>
 
+              <PartTimeWorkSchedule employeeId={selectedEmployee.id} />
               <ReviewEmployeeTaskHistory employeeId={selectedEmployee.id} />
 
               {/* Legacy history remains available as historical reference only. */}

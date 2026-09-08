@@ -5,6 +5,7 @@ import { useTranslation } from './lib/LanguageContext';
 import { employeeService, overtimeService, reportService } from './lib/services';
 import { OvertimeEntry, UserProfile } from './types';
 import { ReviewSupervisorTasks } from './components/review/TaskWorkflow';
+import { ShiftNoticeControl } from './components/review/ShiftPlanning';
 import { motion, AnimatePresence } from 'motion/react';
 import SignatureCanvas from 'react-signature-canvas';
 import { formatDate, formatTime, formatDateWithDay } from './lib/dateUtils';
@@ -203,6 +204,7 @@ export default function SupervisorPortal() {
       </header>
 
       <main className="max-w-5xl mx-auto p-6 space-y-6">
+        <ShiftNoticeControl employees={reviewEmployees} />
         <ReviewSupervisorTasks employees={reviewEmployees} />
         <AnimatePresence mode="wait">
           {!selectedEmployeeId ? (

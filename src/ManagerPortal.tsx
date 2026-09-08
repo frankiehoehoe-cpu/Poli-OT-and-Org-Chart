@@ -39,6 +39,7 @@ import OrgChart from './components/OrgChart';
 import ManagerControlDashboard from './components/ManagerControlDashboard';
 import { getSingaporeMonth } from './lib/overtimeRisk';
 import { getEmploymentType, getReviewTaskSubmissions, loadReviewTasks, REVIEW_TASKS_CHANGED, setReviewEmploymentType, type ReviewEmploymentType, type ReviewTaskSubmission } from './lib/reviewTasks';
+import { ManagerPartTimeForecast } from './components/review/ShiftPlanning';
 
 export default function ManagerPortal() {
   const { logout, user } = useAuth();
@@ -377,7 +378,11 @@ export default function ManagerPortal() {
     
     setIsSubmitting(true);
     if (editingEmployeeId) {
-      await employeeService.updateEmployee(editingEmployeeId, newName, newPassword, newDepartment);
+      const currentEmployee = employees.find((employee) => employee.id === editingEmployeeId);
+      const profileChanged = !currentEmployee || currentEmployee.name !== newName || (currentEmployee.password || '') !== newPassword || currentEmployee.department !== newDepartment;
+      if (profileChanged) {
+        await employeeService.updateEmployee(editingEmployeeId, newName, newPassword, newDepartment);
+      }
       setReviewEmploymentType(editingEmployeeId, newEmploymentType);
     } else {
       const createdEmployeeId = await employeeService.createEmployee(newName, newPassword, newDepartment);
@@ -882,6 +887,12 @@ export default function ManagerPortal() {
                       </div>
                     )}
                   </div>
+
+                  {getEmploymentType(employees.find((employee) => employee.id === selectedEmployeeSummary.employeeId) || { id: selectedEmployeeSummary.employeeId }) === 'part-time' && (
+                    <div className="border-b border-violet-100 bg-violet-50/40 p-5 sm:p-8">
+                      <ManagerPartTimeForecast tasks={loadReviewTasks()} employeeId={selectedEmployeeSummary.employeeId} month={selectedMonth} />
+                    </div>
+                  )}
 
                   <div className="overflow-x-auto">
                     <table className="w-full">
