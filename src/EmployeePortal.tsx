@@ -27,13 +27,14 @@ import {
 } from 'lucide-react';
 
 export default function EmployeePortal({ initialEmployee, onBack }: { initialEmployee?: UserProfile | null, onBack?: () => void }) {
-  const { logout, role } = useAuth();
+  const { login, logout, role, user } = useAuth();
   const navigate = useNavigate();
   const { t, language } = useTranslation();
   const [employees, setEmployees] = useState<UserProfile[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState<UserProfile | null>(initialEmployee || null);
+  const authenticatedEmployee = role === 'employee' ? user : null;
+  const [selectedEmployee, setSelectedEmployee] = useState<UserProfile | null>(initialEmployee || authenticatedEmployee);
   const [passwordInput, setPasswordInput] = useState('');
-  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(Boolean(authenticatedEmployee));
   const [entries, setEntries] = useState<OvertimeEntry[]>([]);
   const [plans, setPlans] = useState<OvertimePlan[]>([]);
   const [error, setError] = useState('');
@@ -121,7 +122,7 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
     if (!selectedEmployee) return;
     const result = await employeeService.verifyEmployee(selectedEmployee.id, passwordInput);
     setPasswordInput('');
-    if (result.verified) {
+    if (result.verified && await login()) {
       setIsUnlocked(true);
       fetchEntries(selectedEmployee.id);
       fetchPlans(selectedEmployee.id);
@@ -139,6 +140,14 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
       setIsUnlocked(false);
       setPasswordInput('');
     }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setSelectedEmployee(null);
+    setIsUnlocked(false);
+    if (onBack) onBack();
+    else navigate('/');
   };
 
   const fetchEntries = async (employeeId: string) => {
@@ -429,7 +438,7 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
               <Home className="w-5 h-5" />
             </button>
             <button 
-              onClick={logout}
+              onClick={() => void handleLogout()}
               className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors"
             >
               <LogOut className="w-5 h-5" />

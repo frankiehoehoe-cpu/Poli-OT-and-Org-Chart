@@ -1,11 +1,19 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Role, UserProfile } from '../types';
+import { setAuthenticatedRole } from './authState';
+
+interface SessionIdentity {
+  role: Role;
+  subject: string;
+  employeeId?: string;
+  employeeName?: string;
+}
 
 interface AuthContextType {
   role: Role | null;
   user: UserProfile | null;
-  login: (role: Role, user?: UserProfile) => void;
-  logout: () => void;
+  login: () => Promise<boolean>;
+  logout: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -16,38 +24,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const savedRole = sessionStorage.getItem('userRole') as Role;
-    const savedUser = sessionStorage.getItem('userData');
-    
-    if (savedRole) {
-      setRole(savedRole);
-      if (savedUser) {
-        const parsed = JSON.parse(savedUser) as UserProfile;
-        const safeUser = { id: parsed.id, name: parsed.name, role: parsed.role, ...(parsed.department ? { department: parsed.department } : {}) };
-        setUser(safeUser);
-        sessionStorage.setItem('userData', JSON.stringify(safeUser));
-      }
-    }
-    setIsLoading(false);
+  const applyIdentity = useCallback((identity: SessionIdentity | null) => {
+    const nextRole = identity?.role || null;
+    setRole(nextRole);
+    setAuthenticatedRole(nextRole);
+    setUser(identity?.role === 'employee' && identity.employeeId && identity.employeeName ? {
+      id: identity.employeeId,
+      name: identity.employeeName,
+      role: 'employee'
+    } : null);
   }, []);
 
-  const login = (role: Role, user?: UserProfile) => {
-    setRole(role);
-    const safeUser = user ? { id: user.id, name: user.name, role: user.role, ...(user.department ? { department: user.department } : {}) } : undefined;
-    if (safeUser) setUser(safeUser);
-    sessionStorage.setItem('userRole', role);
-    if (safeUser) sessionStorage.setItem('userData', JSON.stringify(safeUser));
-  };
+  const loadSession = useCallback(async () => {
+    try {
+      const response = await fetch('/api/auth/session', {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        applyIdentity(null);
+        return false;
+      }
+      const result = await response.json() as { authenticated: boolean; identity?: SessionIdentity };
+      if (!result.authenticated || !result.identity) {
+        applyIdentity(null);
+        return false;
+      }
+      applyIdentity(result.identity);
+      return true;
+    } catch {
+      applyIdentity(null);
+      return false;
+    }
+  }, [applyIdentity]);
 
-  const logout = () => {
-    setRole(null);
-    setUser(null);
-    sessionStorage.clear();
+  useEffect(() => {
+    sessionStorage.removeItem('userRole');
+    sessionStorage.removeItem('userData');
+    void loadSession().finally(() => setIsLoading(false));
+  }, [loadSession]);
+
+  const logout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { accept: 'application/json' },
+        credentials: 'same-origin'
+      });
+    } finally {
+      sessionStorage.removeItem('userRole');
+      sessionStorage.removeItem('userData');
+      applyIdentity(null);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ role, user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ role, user, login: loadSession, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

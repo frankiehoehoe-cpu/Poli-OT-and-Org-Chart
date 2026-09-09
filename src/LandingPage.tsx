@@ -26,7 +26,7 @@ import OrgChart from './components/OrgChart';
 
 export default function LandingPage() {
   const { t, language, setLanguage } = useTranslation();
-  const { role, login } = useAuth();
+  const { role } = useAuth();
   const navigate = useNavigate();
   const [employees, setEmployees] = useState<UserProfile[]>([]);
   const [entries, setEntries] = useState<OvertimeEntry[]>([]);

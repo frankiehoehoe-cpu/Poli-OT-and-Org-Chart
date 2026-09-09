@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { UserProfile, OvertimeEntry, OvertimePlan, OrgNode, OrgChartSettings } from '../types';
+import { getAuthenticatedRole } from './authState';
 
 function getDateDaysAgo(days: number): string {
   const d = new Date();
@@ -24,7 +25,7 @@ function getDateDaysAgo(days: number): string {
 }
 
 function getAllowedStartDate(requestedStartDate: string): string {
-  const role = sessionStorage.getItem('userRole');
+  const role = getAuthenticatedRole();
   if (role === 'manager') {
     // Managers can see all data (经理可以浏览所有数据)
     return requestedStartDate;
@@ -130,6 +131,7 @@ export const employeeService = {
       const response = await fetch('/api/employee/verify', {
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ employeeId, password })
       });
       if (!response.ok) return { verified: false };
@@ -170,7 +172,7 @@ export const overtimeService = {
 
   async getEmployeeEntries(employeeId: string, month?: string): Promise<OvertimeEntry[]> {
     try {
-      const cacheKey = `${employeeId}-${month || 'default'}-${sessionStorage.getItem('userRole') || 'default'}`;
+      const cacheKey = `${employeeId}-${month || 'default'}-${getAuthenticatedRole() || 'default'}`;
       if (getEmployeeEntriesCache[cacheKey] && Date.now() - getEmployeeEntriesCache[cacheKey].time < ENTRIES_CACHE_DURATION) {
         return [...getEmployeeEntriesCache[cacheKey].data];
       }
@@ -209,7 +211,7 @@ export const overtimeService = {
 
   async getAllEntries(month?: string): Promise<OvertimeEntry[]> {
     try {
-      const cacheKey = `${month || 'default'}-${sessionStorage.getItem('userRole') || 'default'}`;
+      const cacheKey = `${month || 'default'}-${getAuthenticatedRole() || 'default'}`;
       if (getAllEntriesCache[cacheKey] && Date.now() - getAllEntriesCache[cacheKey].time < ENTRIES_CACHE_DURATION) {
         return [...getAllEntriesCache[cacheKey].data];
       }
@@ -343,7 +345,7 @@ export const planService = {
 
   async getAllPlansForMonth(month: string): Promise<OvertimePlan[]> {
     try {
-      const cacheKey = `${month}-${sessionStorage.getItem('userRole') || 'default'}`;
+      const cacheKey = `${month}-${getAuthenticatedRole() || 'default'}`;
       if (planCache[cacheKey] && Date.now() - planCache[cacheKey].time < PLAN_CACHE_DURATION) {
         return [...planCache[cacheKey].data];
       }

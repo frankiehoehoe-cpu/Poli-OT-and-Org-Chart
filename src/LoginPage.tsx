@@ -26,13 +26,14 @@ export default function LoginPage({ forceRoleSelection = false, onBack }: { forc
     const response = await fetch('/api/staff/verify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ role: activeRole, password })
     });
     setPassword('');
     if (!response.ok) return setError(t('wrongPassword'));
     const result = await response.json() as { verified: boolean; role?: Role };
     if (!result.verified || result.role !== activeRole) return setError(t('wrongPassword'));
-    login(activeRole);
+    if (!(await login())) return setError(t('wrongPassword'));
     navigate('/portal');
   };
 
@@ -92,8 +93,7 @@ export default function LoginPage({ forceRoleSelection = false, onBack }: { forc
                     icon={<User className="w-5 h-5" />} 
                     label={t('employee')} 
                     onClick={() => {
-                      login('employee');
-                      navigate('/portal');
+                      navigate('/overview');
                     }} 
                     variant="employee"
                   />
