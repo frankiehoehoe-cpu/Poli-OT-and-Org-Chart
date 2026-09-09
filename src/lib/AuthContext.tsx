@@ -4,7 +4,6 @@ import { setAuthenticatedRole } from './authState';
 
 interface SessionIdentity {
   role: Role;
-  subject: string;
   employeeId?: string;
   employeeName?: string;
 }
@@ -47,12 +46,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         applyIdentity(null);
         return false;
       }
-      const result = await response.json() as { authenticated: boolean; identity?: SessionIdentity };
-      if (!result.authenticated || !result.identity) {
+      const result = await response.json() as { authenticated: boolean } & Partial<SessionIdentity>;
+      if (!result.authenticated || !result.role) {
         applyIdentity(null);
         return false;
       }
-      applyIdentity(result.identity);
+      applyIdentity(result as SessionIdentity);
       return true;
     } catch {
       applyIdentity(null);

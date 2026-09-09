@@ -6,5 +6,11 @@ export default async function handler(request: Request, response: Response) {
   if (request.method !== 'GET') return response.status(405).json({ authenticated: false });
   const session = await readSession(request);
   if (!session) return response.status(401).json({ authenticated: false });
-  return response.status(200).json({ authenticated: true, identity: session });
+  return response.status(200).json({
+    authenticated: true,
+    role: session.role,
+    expiresAt: session.expiresAt,
+    ...(session.employeeId ? { employeeId: session.employeeId } : {}),
+    ...(session.employeeName ? { employeeName: session.employeeName } : {})
+  });
 }
