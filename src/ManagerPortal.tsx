@@ -396,7 +396,7 @@ export default function ManagerPortal() {
 
   const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName || !newPassword) return;
+    if (!newName || (!editingEmployeeId && !newPassword)) return;
     
     setIsSubmitting(true);
     if (editingEmployeeId) {
@@ -415,7 +415,7 @@ export default function ManagerPortal() {
 
   const handleEditClick = (emp: UserProfile) => {
     setNewName(emp.name);
-    setNewPassword(emp.password || '');
+    setNewPassword('');
     setNewDepartment(emp.department || 'deptOther');
     setEditingEmployeeId(emp.id);
   };
@@ -592,7 +592,7 @@ export default function ManagerPortal() {
                       value={newPassword}
                       onChange={e => setNewPassword(e.target.value)}
                       className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/10 bg-slate-50 font-medium"
-                      placeholder="Enter a simple password"
+                      placeholder={editingEmployeeId ? 'Leave blank to keep current password' : 'Enter a new password'}
                     />
                   </div>
                   <div>
@@ -648,7 +648,7 @@ export default function ManagerPortal() {
                       <h4 className="font-bold text-slate-800" translate="no">{emp.name}</h4>
                       <div className="flex items-center gap-2 text-xs text-slate-700 font-medium mt-1">
                         <Lock className="w-3 h-3" />
-                        <span>{emp.password}</span>
+                        <span>Password protected</span>
                         <span className="mx-2">|</span>
                         <span>{t(emp.department || 'deptOther')}</span>
                       </div>

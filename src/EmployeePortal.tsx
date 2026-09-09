@@ -116,9 +116,12 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
     setError('');
   };
 
-  const handleUnlock = (e: React.FormEvent) => {
+  const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedEmployee?.password === passwordInput) {
+    if (!selectedEmployee) return;
+    const result = await employeeService.verifyEmployee(selectedEmployee.id, passwordInput);
+    setPasswordInput('');
+    if (result.verified) {
       setIsUnlocked(true);
       fetchEntries(selectedEmployee.id);
       fetchPlans(selectedEmployee.id);

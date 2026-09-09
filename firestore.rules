@@ -54,7 +54,9 @@ service cloud.firestore {
     // --- Employee Profiles ---
     match /employees/{employeeId} {
       allow create: if isValidEmployee(incoming());
-      allow list, get: if true;
+      // Sensitive legacy credentials share this document. All reads must pass
+      // through the server-side API, which returns a field allow-list only.
+      allow list, get: if false;
       allow update: if isValidEmployee(incoming());
       allow delete: if true;
     }
