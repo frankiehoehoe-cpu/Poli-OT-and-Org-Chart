@@ -31,7 +31,7 @@ async function accessToken(): Promise<string> {
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion })
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth-type:jwt-bearer', assertion })
   });
   if (!response.ok) throw new Error(`Firebase credential exchange failed (${response.status})`);
   const result = await response.json() as { access_token: string; expires_in: number };
@@ -45,6 +45,19 @@ async function firestore(path: string): Promise<Response> {
   return fetch(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(account.project_id)}/databases/${encodeURIComponent(FIRESTORE_DATABASE_ID)}/documents/${path}`, { headers: { authorization: `Bearer ${token}` } });
 }
 
+async function firestoreFailure(response: Response, context: string): Promise<Error> {
+  let detail = '';
+  try {
+    const body = await response.json() as { error?: { message?: string; status?: string } };
+    const message = body.error?.message?.trim();
+    const status = body.error?.status?.trim();
+    detail = message ? `: ${status ? `${status} — ` : ''}${message}` : '';
+  } catch {
+    // Keep the status-only error if Firestore does not return JSON.
+  }
+  return new Error(`${context} (${response.status})${detail}`);
+}
+
 const value = (field?: FirestoreValue): unknown => field?.stringValue ?? field?.booleanValue ?? (field?.integerValue ? Number(field.integerValue) : field?.doubleValue);
 
 export interface ServerEmployee { id: string; name: string; role: string; department?: string; password?: string; passwordHash?: string }
@@ -55,17 +68,29 @@ function employee(document: FirestoreDocument): ServerEmployee {
 }
 
 export async function listEmployees(): Promise<ServerEmployee[]> {
-  const response = await firestore('employees?pageSize=500&orderBy=name');
-  if (!response.ok) throw new Error(`Employee lookup failed (${response.status})`);
-  const result = await response.json() as { documents?: FirestoreDocument[] };
-  return (result.documents || []).map(employee);
+  const documents: FirestoreDocument[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const query = new URLSearchParams({ pageSize: '100' });
+    if (pageToken) query.set('pageToken', pageToken);
+    const response = await firestore(`employees?${query.toString()}`);
+    if (!response.ok) throw await firestoreFailure(response, 'Employee lookup failed');
+    const result = await response.json() as { documents?: FirestoreDocument[]; nextPageToken?: string };
+    documents.push(...(result.documents || []));
+    pageToken = result.nextPageToken || undefined;
+  } while (pageToken);
+
+  return documents
+    .map(employee)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }
 
 export async function getEmployee(id: string): Promise<ServerEmployee | null> {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return null;
   const response = await firestore(`employees/${encodeURIComponent(id)}`);
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Employee lookup failed (${response.status})`);
+  if (!response.ok) throw await firestoreFailure(response, 'Employee lookup failed');
   return employee(await response.json() as FirestoreDocument);
 }
 
