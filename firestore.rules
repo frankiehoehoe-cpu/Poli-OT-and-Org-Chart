@@ -53,12 +53,22 @@ service cloud.firestore {
 
     // --- Employee Profiles ---
     match /employees/{employeeId} {
-      allow create: if isValidEmployee(incoming());
       // Sensitive legacy credentials share this document. All reads must pass
       // through the server-side API, which returns a field allow-list only.
       allow list, get: if false;
-      allow update: if isValidEmployee(incoming());
-      allow delete: if true;
+      // Profile mutations are performed by authenticated server APIs.
+      allow create, update, delete: if false;
+    }
+
+    // OT PRO V1.3 is server-authorized. Direct browser access stays denied.
+    match /workAssignments/{documentId} {
+      allow read, write: if false;
+    }
+    match /workSubmissions/{documentId} {
+      allow read, write: if false;
+    }
+    match /shiftNotices/{documentId} {
+      allow read, write: if false;
     }
 
     // --- Overtime Entries ---

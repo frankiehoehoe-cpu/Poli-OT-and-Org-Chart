@@ -9,6 +9,7 @@ export interface UserProfile {
   name: string;
   role: Role;
   department?: string;
+  employmentType?: 'full-time' | 'part-time';
 }
 
 export interface RosterAssignment {

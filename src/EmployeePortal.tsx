@@ -4,6 +4,8 @@ import { useAuth } from './lib/AuthContext';
 import { useTranslation } from './lib/LanguageContext';
 import { employeeService, overtimeService, planService } from './lib/services';
 import { UserProfile, OvertimeEntry, OvertimePlan } from './types';
+import { TaskWorkflow, WorkHistory } from './components/workflow/TaskWorkflow';
+import { OT_V13_ENABLED } from './lib/v13Flags';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDate, formatTime, parseDate, formatDateFriendly, formatDateWithDay } from './lib/dateUtils';
 import { 
@@ -525,6 +527,10 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
               animate={{ opacity: 1 }}
               className="space-y-6"
             >
+              {OT_V13_ENABLED && <>
+                <TaskWorkflow role="employee" employees={employees} employeeId={selectedEmployee.id} />
+                <WorkHistory employeeId={selectedEmployee.id} month={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit' }).slice(0, 7)} />
+              </>}
               <div className="flex items-center justify-between no-print">
                 <div className="flex items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 flex-1">
                   <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">

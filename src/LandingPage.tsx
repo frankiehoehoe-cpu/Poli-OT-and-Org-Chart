@@ -23,6 +23,8 @@ import {
 import LoginPage from './LoginPage';
 import EmployeePortal from './EmployeePortal';
 import OrgChart from './components/OrgChart';
+import { PublicShiftNotices } from './components/workflow/ShiftPlanning';
+import { OT_V13_ENABLED } from './lib/v13Flags';
 
 export default function LandingPage() {
   const { t, language, setLanguage } = useTranslation();
@@ -179,6 +181,7 @@ export default function LandingPage() {
 
       {/* Hero Content */}
       <main className="flex-1 max-w-6xl mx-auto w-full p-6 pt-28 pb-20 space-y-12">
+        {OT_V13_ENABLED && <PublicShiftNotices />}
         <header className="text-center space-y-4">
           <motion.h1 
             initial={{ opacity: 0, y: -20 }}

@@ -47,18 +47,18 @@ let employeeCacheTime = 0;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 export const employeeService = {
-  async createEmployee(name: string, password: string, department: string = 'deptOther'): Promise<string> {
+  async createEmployee(name: string, password: string, department: string = 'deptOther', employmentType?: 'full-time' | 'part-time'): Promise<string> {
     try {
-      const docRef = await addDoc(collection(db, 'employees'), {
-        name,
-        password,
-        department,
-        role: 'employee',
-        createdAt: serverTimestamp()
+      const response = await fetch('/api/v13/employees', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ name, password, department, ...(employmentType ? { employmentType } : {}) })
       });
-      // Invalidate cache
+      if (!response.ok) throw new Error(`Employee create failed (${response.status})`);
+      const result = await response.json() as { employee: UserProfile };
       employeeCache = null;
-      return docRef.id;
+      return result.employee.id;
     } catch (e) {
       handleFirestoreError(e, OperationType.CREATE, 'employees');
       return '';
@@ -93,10 +93,15 @@ export const employeeService = {
     }
   },
 
-  async updateEmployee(id: string, name: string, password: string | undefined, department: string): Promise<void> {
+  async updateEmployee(id: string, name: string, password: string | undefined, department: string, employmentType?: 'full-time' | 'part-time'): Promise<void> {
     try {
-      const docRef = doc(db, 'employees', id);
-      await updateDoc(docRef, { name, ...(password ? { password } : {}), department, updatedAt: serverTimestamp() });
+      const response = await fetch('/api/v13/employees', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ id, name, password, department, ...(employmentType ? { employmentType } : {}) })
+      });
+      if (!response.ok) throw new Error(`Employee update failed (${response.status})`);
       employeeCache = null;
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `employees/${id}`);
@@ -105,11 +110,13 @@ export const employeeService = {
 
   async updateEmployeeDepartment(id: string, department: string): Promise<void> {
     try {
-      const docRef = doc(db, 'employees', id);
-      await updateDoc(docRef, {
-        department,
-        updatedAt: serverTimestamp()
+      const response = await fetch('/api/v13/employees', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ id, department })
       });
+      if (!response.ok) throw new Error(`Employee department update failed (${response.status})`);
       employeeCache = null;
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `employees/${id}`);
@@ -118,8 +125,13 @@ export const employeeService = {
 
   async deleteEmployee(id: string): Promise<void> {
     try {
-      const docRef = doc(db, 'employees', id);
-      await deleteDoc(docRef);
+      const response = await fetch('/api/v13/employees', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ id })
+      });
+      if (!response.ok) throw new Error(`Employee delete failed (${response.status})`);
       employeeCache = null;
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `employees/${id}`);
