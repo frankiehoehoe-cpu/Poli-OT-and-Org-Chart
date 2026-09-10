@@ -1,13 +1,17 @@
 import type { Request, Response } from 'express';
 import { isSameOrigin, requireRole, type SessionIdentity, type SessionRole } from './_session.js';
+import { isV13IsolatedTestMode } from './_v13Collections.js';
 
 export class V13WritesDisabledError extends Error {
   statusCode = 503;
   code = 'V13_WRITES_DISABLED';
 }
 
-export function requireV13WritesEnabled(): void {
-  if (process.env.OT_V13_WRITES_ENABLED !== 'true') throw new V13WritesDisabledError('OT V1.3 writes are disabled');
+export function requireV13WritesEnabled(environment: NodeJS.ProcessEnv = process.env): void {
+  if (environment.OT_V13_WRITES_ENABLED !== 'true') throw new V13WritesDisabledError('OT V1.3 writes are disabled');
+  if (environment.VERCEL_ENV === 'preview' && !isV13IsolatedTestMode(environment)) {
+    throw new V13WritesDisabledError('OT V1.3 Preview writes require isolated test mode');
+  }
 }
 
 export async function requireV13Mutation(request: Request, ...roles: SessionRole[]): Promise<SessionIdentity> {

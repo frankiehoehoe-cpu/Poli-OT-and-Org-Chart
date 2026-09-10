@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { createServerDocument, getServerDocument, listEmployees, listServerDocuments, updateServerDocument } from '../_firebaseAdmin.js';
+import { getV13Collections } from '../_v13Collections.js';
 import { readSession } from '../_session.js';
 import { badRequest, requireV13Mutation, safeString, safeStringArray, sendApiError } from '../_v13.js';
 import { getSingaporeDate, type ShiftNotice } from '../../src/lib/workflows.js';
@@ -11,10 +12,11 @@ const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 export default async function handler(request: Request, response: Response) {
   response.setHeader('Cache-Control', 'private, no-store');
   try {
+    const collections = getV13Collections();
     if (request.method === 'GET') {
       const session = await readSession(request);
       const date = safeString(request.query?.date, 10) || getSingaporeDate();
-      const notices = (await listServerDocuments<ShiftNotice>('shiftNotices')).map((document) => ({ ...document.data, id: document.id }));
+      const notices = (await listServerDocuments<ShiftNotice>(collections.shiftNotices)).map((document) => ({ ...document.data, id: document.id }));
       return response.status(200).json({
         notices: session?.role === 'supervisor' || session?.role === 'manager'
           ? notices
@@ -52,14 +54,14 @@ export default async function handler(request: Request, response: Response) {
         createdAt: now,
         updatedAt: now
       };
-      await createServerDocument('shiftNotices', notice.id, notice as unknown as Record<string, unknown>);
+      await createServerDocument(collections.shiftNotices, notice.id, notice as unknown as Record<string, unknown>);
       return response.status(201).json({ notice });
     }
 
     if (request.method === 'PATCH') {
       const session = await requireV13Mutation(request, 'supervisor');
       const id = safeString(request.body?.id, 128);
-      const document = await getServerDocument<ShiftNotice>('shiftNotices', id);
+      const document = await getServerDocument<ShiftNotice>(collections.shiftNotices, id);
       if (!document) return response.status(404).json({ error: 'NOTICE_NOT_FOUND' });
       const now = new Date().toISOString();
       const action = safeString(request.body?.action, 40);
@@ -68,7 +70,7 @@ export default async function handler(request: Request, response: Response) {
         : action === 'visibility'
           ? { ...document.data, id, visibility: request.body?.visibility === 'HIDDEN' ? 'HIDDEN' : 'VISIBLE', updatedAt: now }
           : { ...document.data, id, note: safeString(request.body?.note, 1000) || undefined, updatedAt: now };
-      await updateServerDocument('shiftNotices', id, notice as unknown as Record<string, unknown>, document.updateTime);
+      await updateServerDocument(collections.shiftNotices, id, notice as unknown as Record<string, unknown>, document.updateTime);
       return response.status(200).json({ notice });
     }
 

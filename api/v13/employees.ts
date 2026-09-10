@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { createServerDocument, deleteServerDocument, getEmployee, getServerDocument, hashPassword, patchServerDocumentFields, publicEmployee, type ServerEmployee } from '../_firebaseAdmin.js';
 import { isSameOrigin, requireRole } from '../_session.js';
-import { badRequest, requireV13WritesEnabled, safeString, sendApiError } from '../_v13.js';
+import { V13WritesDisabledError, badRequest, requireV13WritesEnabled, safeString, sendApiError } from '../_v13.js';
+import { isV13IsolatedTestMode } from '../_v13Collections.js';
 import type { EmploymentType } from '../../src/lib/workflows.js';
 
 const requestedEmploymentType = (value: unknown): EmploymentType | undefined =>
@@ -14,6 +15,7 @@ export default async function handler(request: Request, response: Response) {
     if (!['POST', 'PATCH', 'DELETE'].includes(request.method)) return response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     if (!isSameOrigin(request)) return response.status(403).json({ error: 'FORBIDDEN' });
     await requireRole(request, 'manager');
+    if (isV13IsolatedTestMode()) throw new V13WritesDisabledError('Employee records are read-only in isolated test mode');
 
     if (request.method === 'POST') {
       const name = safeString(request.body?.name, 160);

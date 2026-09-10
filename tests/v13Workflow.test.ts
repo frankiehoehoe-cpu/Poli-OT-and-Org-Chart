@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { requireV13WritesEnabled, V13WritesDisabledError } from '../api/_v13.js';
+import { getV13Collections } from '../api/_v13Collections.js';
 import {
   aggregateMixedMonth,
   applyEffectiveCorrection,
@@ -56,14 +57,26 @@ assert.equal(aggregates[0].partTimeWorkedHours, 8);
 const notice = { id: 'notice-1' } as ShiftNotice;
 assert.equal(shiftNoticeCreatesWorkRecord(notice), false);
 
-const previousGuard = process.env.OT_V13_WRITES_ENABLED;
-delete process.env.OT_V13_WRITES_ENABLED;
-assert.throws(() => requireV13WritesEnabled(), V13WritesDisabledError);
-process.env.OT_V13_WRITES_ENABLED = 'false';
-assert.throws(() => requireV13WritesEnabled(), V13WritesDisabledError);
-process.env.OT_V13_WRITES_ENABLED = 'true';
-assert.doesNotThrow(() => requireV13WritesEnabled());
-if (previousGuard === undefined) delete process.env.OT_V13_WRITES_ENABLED;
-else process.env.OT_V13_WRITES_ENABLED = previousGuard;
+assert.deepEqual(getV13Collections({}), {
+  assignments: 'workAssignments', submissions: 'workSubmissions', shiftNotices: 'shiftNotices'
+});
+assert.deepEqual(getV13Collections({ OT_V13_ISOLATED_TEST_MODE: 'true' }), {
+  assignments: 'otv13_test_workAssignments',
+  submissions: 'otv13_test_workSubmissions',
+  shiftNotices: 'otv13_test_shiftNotices'
+});
+assert.throws(() => requireV13WritesEnabled({}), V13WritesDisabledError);
+assert.throws(() => requireV13WritesEnabled({ OT_V13_WRITES_ENABLED: 'false' }), V13WritesDisabledError);
+assert.throws(
+  () => requireV13WritesEnabled({ OT_V13_WRITES_ENABLED: 'true', VERCEL_ENV: 'preview' }),
+  V13WritesDisabledError,
+  'Preview must not write normal V1.3 collections'
+);
+assert.doesNotThrow(() => requireV13WritesEnabled({
+  OT_V13_WRITES_ENABLED: 'true',
+  OT_V13_ISOLATED_TEST_MODE: 'true',
+  VERCEL_ENV: 'preview'
+}));
+assert.doesNotThrow(() => requireV13WritesEnabled({ OT_V13_WRITES_ENABLED: 'true', VERCEL_ENV: 'production' }));
 
 console.log('OT V1.3 pure workflow tests passed');

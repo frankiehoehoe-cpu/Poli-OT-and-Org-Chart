@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { getEmployee, getServerDocument, listEmployees, listServerDocuments, updateServerDocument, createServerDocument } from '../_firebaseAdmin.js';
+import { getV13Collections } from '../_v13Collections.js';
 import { requireSession } from '../_session.js';
 import { badRequest, conflict, requireV13Mutation, safeString, safeStringArray, sendApiError } from '../_v13.js';
 import { getEmploymentType, type AssignmentMode, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
@@ -59,9 +60,10 @@ async function validateAssignedEmployees(ids: string[], mode: AssignmentMode) {
 export default async function handler(request: Request, response: Response) {
   response.setHeader('Cache-Control', 'private, no-store');
   try {
+    const collections = getV13Collections();
     if (request.method === 'GET') {
       const session = await requireSession(request);
-      const assignments = (await listServerDocuments<WorkAssignment>('workAssignments')).map((document) => ({ ...document.data, id: document.id }));
+      const assignments = (await listServerDocuments<WorkAssignment>(collections.assignments)).map((document) => ({ ...document.data, id: document.id }));
       return response.status(200).json({
         assignments: session.role === 'employee'
           ? assignments.filter((assignment) => session.employeeId && assignment.assignedEmployeeIds.includes(session.employeeId))
@@ -75,7 +77,7 @@ export default async function handler(request: Request, response: Response) {
       const assignment = assignmentInput(request.body || {});
       await validateAssignedEmployees(assignment.assignedEmployeeIds, assignment.assignmentMode);
       const created: WorkAssignment = { ...assignment, createdBy: session.subject, createdAt: now, updatedAt: now, revision: 1 };
-      await createServerDocument('workAssignments', created.id, created as unknown as Record<string, unknown>);
+      await createServerDocument(collections.assignments, created.id, created as unknown as Record<string, unknown>);
       return response.status(201).json({ assignment: created });
     }
 
@@ -83,12 +85,12 @@ export default async function handler(request: Request, response: Response) {
       const session = await requireV13Mutation(request, 'supervisor');
       const id = safeString(request.body?.id, 128);
       const action = safeString(request.body?.action, 40);
-      const document = await getServerDocument<WorkAssignment>('workAssignments', id);
+      const document = await getServerDocument<WorkAssignment>(collections.assignments, id);
       if (!document) return response.status(404).json({ error: 'NOT_FOUND' });
       const assignment = { ...document.data, id };
       const expectedRevision = Number(request.body?.expectedRevision);
       if (!Number.isInteger(expectedRevision) || expectedRevision !== assignment.revision) throw conflict('Assignment changed');
-      const submissions = (await listServerDocuments<WorkSubmission>('workSubmissions')).map((item) => item.data).filter((submission) => submission.assignmentId === id);
+      const submissions = (await listServerDocuments<WorkSubmission>(collections.submissions)).map((item) => item.data).filter((submission) => submission.assignmentId === id);
       const submittedIds = new Set(submissions.map((submission) => submission.employeeId));
       const now = new Date().toISOString();
       let updated: WorkAssignment;
@@ -119,7 +121,7 @@ export default async function handler(request: Request, response: Response) {
       }
 
       updated = { ...updated, updatedAt: now, revision: assignment.revision + 1 };
-      await updateServerDocument('workAssignments', id, updated as unknown as Record<string, unknown>, document.updateTime);
+      await updateServerDocument(collections.assignments, id, updated as unknown as Record<string, unknown>, document.updateTime);
       return response.status(200).json({ assignment: updated });
     }
 

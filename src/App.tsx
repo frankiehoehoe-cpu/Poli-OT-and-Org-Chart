@@ -8,6 +8,7 @@ import ManagerPortal from './ManagerPortal';
 
 import LandingPage from './LandingPage';
 import WelcomePage from './WelcomePage';
+import { IsolatedModeBanner } from './components/workflow/IsolatedModeBanner';
 
 function AppContent() {
   const { role, isLoading } = useAuth();
@@ -21,20 +22,23 @@ function AppContent() {
   }
 
   return (
-    <Routes>
-      <Route path="/" element={<WelcomePage />} />
-      <Route path="/overview" element={<LandingPage />} />
-      <Route 
-        path="/portal" 
-        element={
-          role === 'employee' ? <EmployeePortal /> :
-          role === 'supervisor' ? <SupervisorPortal /> :
-          role === 'manager' ? <ManagerPortal /> :
-          <Navigate to="/" replace />
-        } 
-      />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <IsolatedModeBanner />
+      <Routes>
+        <Route path="/" element={<WelcomePage />} />
+        <Route path="/overview" element={<LandingPage />} />
+        <Route
+          path="/portal"
+          element={
+            role === 'employee' ? <EmployeePortal /> :
+            role === 'supervisor' ? <SupervisorPortal /> :
+            role === 'manager' ? <ManagerPortal /> :
+            <Navigate to="/" replace />
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   );
 }
 

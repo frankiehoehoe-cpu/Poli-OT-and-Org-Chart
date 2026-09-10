@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { listEmployees, listServerDocuments } from '../_firebaseAdmin.js';
+import { getV13Collections } from '../_v13Collections.js';
 import { requireSession } from '../_session.js';
 import { safeString, sendApiError } from '../_v13.js';
 import { aggregateMixedMonth, getEmploymentType, getPartTimeMonthlyForecast, type LegacyOtRecord, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
@@ -9,12 +10,13 @@ export default async function handler(request: Request, response: Response) {
   try {
     if (request.method !== 'GET') return response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     const session = await requireSession(request);
+    const collections = getV13Collections();
     const month = safeString(request.query?.month, 7);
     if (!/^\d{4}-\d{2}$/.test(month)) return response.status(400).json({ error: 'INVALID_MONTH' });
     const [legacyDocuments, submissionDocuments, assignmentDocuments, employees] = await Promise.all([
       listServerDocuments<LegacyOtRecord>('overtime'),
-      listServerDocuments<WorkSubmission>('workSubmissions'),
-      listServerDocuments<WorkAssignment>('workAssignments'),
+      listServerDocuments<WorkSubmission>(collections.submissions),
+      listServerDocuments<WorkAssignment>(collections.assignments),
       listEmployees()
     ]);
     const legacy = legacyDocuments.map((document) => ({ ...document.data, id: document.id }));
