@@ -135,6 +135,14 @@ export const getSingaporeDate = (date = new Date()): string => {
   return `${value('year')}-${value('month')}-${value('day')}`;
 };
 
+export const getSingaporeTime = (date = new Date()): string => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value || '';
+  return `${value('hour')}:${value('minute')}`;
+};
+
 const validTime = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 export function calculateWorkedHours(start: string, end: string): number | null {
