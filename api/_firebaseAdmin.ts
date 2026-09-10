@@ -175,6 +175,7 @@ export interface ServerDocument<T> {
 }
 
 const validDocumentId = (id: string) => /^[A-Za-z0-9_-]{1,256}$/.test(id);
+const validFieldPath = (path: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(path);
 
 export async function getServerDocument<T>(collection: string, id: string): Promise<ServerDocument<T> | null> {
   if (!validDocumentId(collection) || !validDocumentId(id)) return null;
@@ -222,6 +223,29 @@ export async function updateServerDocument<T extends Record<string, unknown>>(co
     method: 'PATCH', body: JSON.stringify({ fields: documentFields(data) })
   });
   if (!response.ok) throw await firestoreFailure(response, `${collection} update failed`);
+}
+
+export async function patchServerDocumentFields(
+  collection: string,
+  id: string,
+  data: Record<string, unknown>,
+  deleteFields: string[] = [],
+  updateTime?: string
+): Promise<void> {
+  if (!validDocumentId(collection) || !validDocumentId(id)) throw new Error('Invalid document path');
+  const definedEntries = Object.entries(data).filter(([, field]) => field !== undefined);
+  const fieldPaths = [...new Set([...definedEntries.map(([key]) => key), ...deleteFields])];
+  if (!fieldPaths.length) return;
+  if (fieldPaths.some((field) => !validFieldPath(field))) throw new Error('Invalid field path');
+
+  const query = new URLSearchParams();
+  for (const field of fieldPaths) query.append('updateMask.fieldPaths', field);
+  if (updateTime) query.set('currentDocument.updateTime', updateTime);
+  const response = await databaseRequest(`documents/${collection}/${encodeURIComponent(id)}?${query.toString()}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields: documentFields(Object.fromEntries(definedEntries)) })
+  });
+  if (!response.ok) throw await firestoreFailure(response, `${collection} field patch failed`);
 }
 
 export async function deleteServerDocument(collection: string, id: string, updateTime?: string): Promise<void> {
