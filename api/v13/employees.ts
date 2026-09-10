@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
-import { createServerDocument, deleteServerDocument, getEmployee, getServerDocument, hashPassword, publicEmployee, type ServerEmployee, updateServerDocument } from '../_firebaseAdmin.js';
+import { createServerDocument, deleteServerDocument, getEmployee, getServerDocument, hashPassword, patchServerDocumentFields, publicEmployee, type ServerEmployee } from '../_firebaseAdmin.js';
 import { isSameOrigin, requireRole } from '../_session.js';
 import { badRequest, requireV13WritesEnabled, safeString, sendApiError } from '../_v13.js';
 import type { EmploymentType } from '../../src/lib/workflows.js';
@@ -41,14 +41,22 @@ export default async function handler(request: Request, response: Response) {
     const employmentType = requestedEmploymentType(request.body?.employmentType);
     if (request.body?.employmentType !== undefined) requireV13WritesEnabled();
     const password = safeString(request.body?.password, 128);
+    const name = safeString(request.body?.name, 160) || existing.name;
+    const department = safeString(request.body?.department, 120) || existing.department;
+    const fields: Record<string, unknown> = {
+      name,
+      ...(department ? { department } : {}),
+      ...(employmentType ? { employmentType } : {}),
+      ...(password ? { passwordHash: hashPassword(password) } : {})
+    };
+    await patchServerDocumentFields('employees', id, fields, password ? ['password'] : [], document.updateTime);
     const updated: ServerEmployee = {
       ...existing,
-      name: safeString(request.body?.name, 160) || existing.name,
-      department: safeString(request.body?.department, 120) || existing.department,
+      name,
+      department,
       ...(employmentType ? { employmentType } : {}),
-      ...(password ? { password: undefined, passwordHash: hashPassword(password) } : {})
+      ...(password ? { password: undefined, passwordHash: String(fields.passwordHash) } : {})
     };
-    await updateServerDocument('employees', id, updated as unknown as Record<string, unknown>, document.updateTime);
     return response.status(200).json({ employee: publicEmployee(updated) });
   } catch (error) {
     return sendApiError(response, error);
