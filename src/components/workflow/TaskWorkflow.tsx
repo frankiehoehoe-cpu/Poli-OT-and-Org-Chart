@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Role, UserProfile } from '../../types';
-import { getEmploymentType, getSingaporeDate, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from '../../lib/workflows';
+import { getEmploymentType, getSingaporeDate, getSingaporeTime, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from '../../lib/workflows';
 import { workflowService } from '../../lib/workflowService';
 
 const workstations = ['Mixing / 搅拌', 'Oven Drying / 烘干', 'Grinding / 研磨', 'Encapsulation / 进胶囊', 'Polishing / 抛光', 'Blistering / 压板', 'Print Code / 打码', 'Sacheting / 茶袋包装', 'Packing / 包装', 'Cleaning / 清洁', 'Changeover / 转线', 'Other Production Work / 其他生产工作'];
@@ -103,22 +103,28 @@ function EmployeeSubmission({ assignment, employee, existing, saved, setError }:
   const [end, setEnd] = useState(assignment.plannedEnd);
   if (!employee) return null;
   if (existing) return <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">Submitted: {existing.employmentTypeSnapshot === 'part-time' ? `${existing.effectiveWorkedHours} worked hours` : `${existing.effectiveOtHours} OT hours`}</p>;
-  const allowed = assignment.date === getSingaporeDate() && !['CLOSED', 'CANCELLED'].includes(assignment.status);
+  const employmentType = getEmploymentType(employee);
+  const isTodayOpen = assignment.date === getSingaporeDate() && !['CLOSED', 'CANCELLED'].includes(assignment.status);
+  const beforeOtOpen = employmentType === 'full-time' && getSingaporeTime() < '20:00';
+  const allowed = isTodayOpen && !beforeOtOpen;
   const submit = async () => {
-    try { await workflowService.submit({ assignmentId: assignment.id, ...(getEmploymentType(employee) === 'part-time' ? { actualStart: start, actualEnd: end } : { otHours: Number(hours) }) }); await saved(); }
+    try { await workflowService.submit({ assignmentId: assignment.id, ...(employmentType === 'part-time' ? { actualStart: start, actualEnd: end } : { otHours: Number(hours) }) }); await saved(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Submission failed'); }
   };
   return (
-    <div className="mt-3 flex flex-wrap items-end gap-2">
-      {getEmploymentType(employee) === 'part-time' ? (
-        <>
-          <Field label="Actual Start"><input type="time" value={start} onChange={(event) => setStart(event.target.value)} /></Field>
-          <Field label="Actual End"><input type="time" value={end} onChange={(event) => setEnd(event.target.value)} /></Field>
-        </>
-      ) : (
-        <Field label="OT Hours"><input type="number" min="0.5" max="12" step="0.5" value={hours} onChange={(event) => setHours(event.target.value)} /></Field>
-      )}
-      <button disabled={!allowed} className="min-h-12 rounded-xl bg-indigo-600 px-4 font-black text-white disabled:opacity-40" onClick={() => void submit()}>Submit</button>
+    <div className="mt-3 space-y-2">
+      {beforeOtOpen && <p className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800">OT submission opens at 20:00 Singapore time / 加班填写于新加坡时间20:00开放</p>}
+      <div className="flex flex-wrap items-end gap-2">
+        {employmentType === 'part-time' ? (
+          <>
+            <Field label="Actual Start"><input type="time" value={start} onChange={(event) => setStart(event.target.value)} /></Field>
+            <Field label="Actual End"><input type="time" value={end} onChange={(event) => setEnd(event.target.value)} /></Field>
+          </>
+        ) : (
+          <Field label="OT Hours"><input type="number" min="0.5" max="12" step="0.5" value={hours} onChange={(event) => setHours(event.target.value)} /></Field>
+        )}
+        <button disabled={!allowed} className="min-h-12 rounded-xl bg-indigo-600 px-4 font-black text-white disabled:opacity-40" onClick={() => void submit()}>Submit</button>
+      </div>
     </div>
   );
 }
