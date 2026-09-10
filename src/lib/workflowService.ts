@@ -1,5 +1,27 @@
 import type { EmployeeMonthAggregate, PartTimeMonthlyForecast, ShiftNotice, WorkAssignment, WorkSubmission } from './workflows';
 
+export interface PublicAssignmentParticipant {
+  employeeId: string;
+  employeeName: string;
+  employmentType: 'full-time' | 'part-time';
+  status: 'PENDING' | 'SUBMITTED';
+  effectiveHours?: number;
+}
+
+export interface PublicAssignment {
+  id: string;
+  date: string;
+  assignmentMode: 'ot-task' | 'work-shift';
+  workstation: string;
+  product?: string;
+  batchNo?: string;
+  targetRequirement: string;
+  plannedStart: string;
+  plannedEnd: string;
+  status: WorkAssignment['status'];
+  participants: PublicAssignmentParticipant[];
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -15,6 +37,9 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export const workflowService = {
   async assignments(): Promise<WorkAssignment[]> {
     return (await api<{ assignments: WorkAssignment[] }>('/api/v13/assignments')).assignments;
+  },
+  async publicOverview(): Promise<{ date: string; assignments: PublicAssignment[] }> {
+    return api('/api/v13/public-overview');
   },
   async saveAssignment(assignment: Partial<WorkAssignment>, existing?: WorkAssignment): Promise<WorkAssignment> {
     if (existing) {
