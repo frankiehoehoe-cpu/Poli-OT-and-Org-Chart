@@ -1,13 +1,75 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { UserProfile } from '../../types';
 import { getSingaporeDate, type ShiftNotice } from '../../lib/workflows';
-import { workflowService } from '../../lib/workflowService';
+import { workflowService, type PublicAssignment } from '../../lib/workflowService';
 
 export function PublicShiftNotices() {
   const [notices, setNotices] = useState<ShiftNotice[]>([]);
-  useEffect(() => { void workflowService.notices().then(setNotices).catch(() => setNotices([])); }, []);
-  if (!notices.length) return null;
-  return <section className="mx-auto w-full max-w-6xl px-6"><div className="rounded-3xl border border-amber-200 bg-amber-50 p-5"><p className="text-xs font-black uppercase tracking-widest text-amber-700">Operational Shift Notice</p>{notices.map((notice) => <div key={notice.id} className="mt-2"><strong>{notice.shiftName}</strong><p className="text-sm">{notice.effectiveStartDate}–{notice.effectiveEndDate} · {notice.startTime}–{notice.endTime}</p>{notice.note && <p className="text-sm text-slate-600">{notice.note}</p>}</div>)}</div></section>;
+  const [assignments, setAssignments] = useState<PublicAssignment[]>([]);
+  const [publicDate, setPublicDate] = useState(getSingaporeDate());
+
+  useEffect(() => {
+    void Promise.all([
+      workflowService.notices().catch(() => [] as ShiftNotice[]),
+      workflowService.publicOverview().catch(() => ({ date: getSingaporeDate(), assignments: [] as PublicAssignment[] }))
+    ]).then(([nextNotices, overview]) => {
+      setNotices(nextNotices);
+      setPublicDate(overview.date);
+      setAssignments(overview.assignments);
+    });
+  }, []);
+
+  return <div className="space-y-4">
+    <section className="mx-auto w-full max-w-6xl px-6">
+      <div className="rounded-3xl border border-indigo-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-indigo-600">Tonight&apos;s OT Assignment / 今晚加班安排</p>
+            <p className="mt-1 text-sm font-bold text-slate-500">{publicDate}</p>
+          </div>
+          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">TODAY ONLY / 仅今日</span>
+        </div>
+
+        {!assignments.length ? (
+          <p className="mt-4 rounded-2xl bg-slate-50 p-5 text-center text-sm font-black text-slate-500">NO OT ASSIGNMENT FOR TONIGHT / 今晚没有加班安排</p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {assignments.map((assignment) => (
+              <article key={assignment.id} className="rounded-2xl border border-slate-200 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-indigo-600">{assignment.assignmentMode === 'work-shift' ? 'WORK SHIFT / 工作班次' : 'OT TASK / 加班任务'}</p>
+                    <h3 className="mt-1 text-lg font-black text-slate-900">{assignment.workstation}</h3>
+                    {assignment.product && <p className="text-sm font-bold text-slate-700">{assignment.product}{assignment.batchNo ? ` · ${assignment.batchNo}` : ''}</p>}
+                    {assignment.targetRequirement && <p className="mt-1 text-sm text-slate-600">{assignment.targetRequirement}</p>}
+                    <p className="mt-1 text-xs font-bold text-slate-500">{assignment.plannedStart}–{assignment.plannedEnd}</p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black">{assignment.status}</span>
+                </div>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {assignment.participants.map((participant) => {
+                    const submitted = participant.status === 'SUBMITTED';
+                    const pendingLabel = participant.employmentType === 'part-time' ? 'PENDING WORK HOURS / 待填写工时' : 'PENDING OT / 待填写';
+                    const submittedLabel = participant.employmentType === 'part-time' ? 'SUBMITTED WORK HOURS ✓ / 已填写工时' : 'SUBMITTED ✓ / 已填写';
+                    return <div key={participant.employeeId} className={`rounded-xl border p-3 ${submitted ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <strong className="text-sm text-slate-900">{participant.employeeName}</strong>
+                        <span className={`text-[10px] font-black ${submitted ? 'text-emerald-700' : 'text-red-700'}`}>{submitted ? submittedLabel : pendingLabel}</span>
+                      </div>
+                      {submitted && participant.effectiveHours !== undefined && <p className="mt-1 text-xs font-bold text-slate-600">Actual: {participant.effectiveHours.toFixed(1)}h</p>}
+                    </div>;
+                  })}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+
+    {notices.length > 0 && <section className="mx-auto w-full max-w-6xl px-6"><div className="rounded-3xl border border-amber-200 bg-amber-50 p-5"><p className="text-xs font-black uppercase tracking-widest text-amber-700">Operational Shift Notice</p>{notices.map((notice) => <div key={notice.id} className="mt-2"><strong>{notice.shiftName}</strong><p className="text-sm">{notice.effectiveStartDate}–{notice.effectiveEndDate} · {notice.startTime}–{notice.endTime}</p>{notice.note && <p className="text-sm text-slate-600">{notice.note}</p>}</div>)}</div></section>}
+  </div>;
 }
 
 export function ShiftNoticeControl({ employees }: { employees: UserProfile[] }) {
