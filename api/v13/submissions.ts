@@ -10,6 +10,7 @@ import {
   deterministicSubmissionId,
   getEmploymentType,
   getSingaporeDate,
+  getSingaporeTime,
   type WorkAssignment,
   type WorkSubmission
 } from '../../src/lib/workflows.js';
@@ -45,6 +46,9 @@ export default async function handler(request: Request, response: Response) {
       const existing = await getServerDocument<WorkSubmission>(collections.submissions, id);
       if (!canEmployeeSubmit({ employeeId: session.employeeId, employmentType, assignment, singaporeDate: getSingaporeDate(), submissionExists: Boolean(existing) })) {
         throw conflict('Submission is not permitted');
+      }
+      if (employmentType === 'full-time' && getSingaporeTime() < '20:00') {
+        throw conflict('Full-Time OT submission opens at 20:00 Singapore time');
       }
       const now = new Date().toISOString();
       const actualWorkstation = safeString(request.body?.actualWorkstation, 200) || assignment.workstation;
