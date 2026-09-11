@@ -4,7 +4,7 @@ export interface PublicAssignmentParticipant {
   employeeId: string;
   employeeName: string;
   employmentType: 'full-time' | 'part-time';
-  status: 'PENDING' | 'SUBMITTED';
+  status: 'PENDING' | 'SUBMITTED' | 'MISMATCH';
   effectiveHours?: number;
 }
 
