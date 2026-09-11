@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
-import { commitServerDocuments, getEmployee, getServerDocument, listServerDocuments, updateServerDocument } from '../_firebaseAdmin.js';
+import { commitServerDocuments, getServerDocument, listServerDocuments, updateServerDocument } from '../_firebaseAdmin.js';
 import { getV13Collections } from '../_v13Collections.js';
+import { getEffectiveEmployee } from '../_v13Employees.js';
 import { requireSession } from '../_session.js';
 import { badRequest, conflict, requireV13Mutation, safeString, sendApiError } from '../_v13.js';
 import {
@@ -8,9 +9,11 @@ import {
   calculateWorkedHours,
   canEmployeeSubmit,
   deterministicSubmissionId,
+  getEffectiveShiftType,
   getEmploymentType,
   getSingaporeDate,
   getSingaporeTime,
+  isFullTimeOtSubmissionOpen,
   type WorkAssignment,
   type WorkSubmission
 } from '../../src/lib/workflows.js';
@@ -44,9 +47,11 @@ export default async function handler(request: Request, response: Response) {
       if (assignment.status === 'CANCELLED') throw conflict('Cancelled assignment cannot receive a late submission');
       if (assignment.date >= getSingaporeDate()) throw conflict('Late submission is only available for past assignment dates');
       if (!assignment.assignedEmployeeIds.includes(employeeId)) throw conflict('Employee is not assigned to this assignment');
-      const employee = await getEmployee(employeeId);
+      const employee = await getEffectiveEmployee(employeeId);
       if (!employee || employee.role !== 'employee') throw Object.assign(new Error('Employee not found'), { statusCode: 404 });
       const employmentType = getEmploymentType(employee);
+      const shiftType = getEffectiveShiftType(assignment, [employmentType]);
+      if (shiftType === 'SECOND_SHIFT') throw conflict('Second Shift does not accept hours submissions');
       if (employmentType === 'full-time' && assignment.assignmentMode !== 'ot-task') throw conflict('Full-Time late entry requires an OT task');
       if (employmentType === 'part-time' && assignment.assignmentMode !== 'work-shift') throw conflict('Part-Time late entry requires a work shift');
       const id = deterministicSubmissionId(assignmentId, employeeId);
@@ -60,6 +65,7 @@ export default async function handler(request: Request, response: Response) {
         employeeNameSnapshot: employee.name,
         employmentTypeSnapshot: employmentType,
         assignmentMode: assignment.assignmentMode,
+        ...(shiftType ? { shiftTypeSnapshot: shiftType } : {}),
         taskDate: assignment.date,
         assignedWorkstation: assignment.workstation,
         actualWorkstation: safeString(request.body?.actualWorkstation, 200) || assignment.workstation,
@@ -99,15 +105,17 @@ export default async function handler(request: Request, response: Response) {
       const assignmentDocument = await getServerDocument<WorkAssignment>(collections.assignments, assignmentId);
       if (!assignmentDocument) return response.status(404).json({ error: 'ASSIGNMENT_NOT_FOUND' });
       const assignment = { ...assignmentDocument.data, id: assignmentId };
-      const employee = await getEmployee(session.employeeId);
+      const employee = await getEffectiveEmployee(session.employeeId);
       if (!employee || employee.role !== 'employee') throw Object.assign(new Error('Employee not found'), { statusCode: 401 });
       const employmentType = getEmploymentType(employee);
+      const shiftType = getEffectiveShiftType(assignment, [employmentType]);
+      const effectiveAssignment = shiftType ? { ...assignment, shiftType } : assignment;
       const id = deterministicSubmissionId(assignmentId, session.employeeId);
       const existing = await getServerDocument<WorkSubmission>(collections.submissions, id);
-      if (!canEmployeeSubmit({ employeeId: session.employeeId, employmentType, assignment, singaporeDate: getSingaporeDate(), submissionExists: Boolean(existing) })) {
+      if (!canEmployeeSubmit({ employeeId: session.employeeId, employmentType, assignment: effectiveAssignment, singaporeDate: getSingaporeDate(), submissionExists: Boolean(existing) })) {
         throw conflict('Submission is not permitted');
       }
-      if (employmentType === 'full-time' && getSingaporeTime() < '20:00') {
+      if (!isFullTimeOtSubmissionOpen(employmentType, effectiveAssignment, getSingaporeTime())) {
         throw conflict('Full-Time OT submission opens at 20:00 Singapore time');
       }
       const now = new Date().toISOString();
@@ -119,6 +127,7 @@ export default async function handler(request: Request, response: Response) {
         employeeNameSnapshot: employee.name,
         employmentTypeSnapshot: employmentType,
         assignmentMode: assignment.assignmentMode,
+        ...(shiftType ? { shiftTypeSnapshot: shiftType } : {}),
         taskDate: assignment.date,
         assignedWorkstation: assignment.workstation,
         actualWorkstation,

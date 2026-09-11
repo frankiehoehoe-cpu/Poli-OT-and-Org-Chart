@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
-import { getEmployee, getServerDocument, listEmployees, listServerDocuments, updateServerDocument, createServerDocument } from '../_firebaseAdmin.js';
+import { getServerDocument, listServerDocuments, updateServerDocument, createServerDocument } from '../_firebaseAdmin.js';
 import { getV13Collections } from '../_v13Collections.js';
+import { listEffectiveEmployees } from '../_v13Employees.js';
 import { requireSession } from '../_session.js';
 import { badRequest, conflict, requireV13Mutation, safeString, safeStringArray, sendApiError } from '../_v13.js';
-import { getEmploymentType, type AssignmentMode, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
+import { getEffectiveShiftType, getEmploymentType, isEmployeeEligibleForAssignment, type AssignmentMode, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
 
 const validDate = /^\d{4}-\d{2}-\d{2}$/;
 const validTime = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -15,7 +16,8 @@ function assignmentInput(body: Record<string, unknown>, existing?: WorkAssignmen
   const plannedStart = safeString(body.plannedStart ?? existing?.plannedStart, 5);
   const plannedEnd = safeString(body.plannedEnd ?? existing?.plannedEnd, 5);
   const assignedEmployeeIds = safeStringArray(body.assignedEmployeeIds ?? existing?.assignedEmployeeIds);
-  if (!assignmentMode || !validDate.test(date) || !validTime.test(plannedStart) || !validTime.test(plannedEnd) || !assignedEmployeeIds.length) {
+  const shiftType = body.shiftType === 'PART_TIME_SHIFT' || body.shiftType === 'SECOND_SHIFT' ? body.shiftType : existing?.shiftType;
+  if (!assignmentMode || !validDate.test(date) || !validTime.test(plannedStart) || !validTime.test(plannedEnd) || !assignedEmployeeIds.length || (assignmentMode === 'work-shift' && !shiftType) || (assignmentMode === 'ot-task' && shiftType)) {
     throw badRequest('Invalid assignment');
   }
   return {
@@ -29,6 +31,7 @@ function assignmentInput(body: Record<string, unknown>, existing?: WorkAssignmen
     plannedEnd,
     taskType: body.taskType === 'non-output' ? 'non-output' : body.taskType === 'output' ? 'output' : existing?.taskType || 'output',
     assignmentMode,
+    ...(shiftType ? { shiftType } : {}),
     targetRequirement: safeString(body.targetRequirement ?? existing?.targetRequirement, 1000),
     status: existing?.status || 'PLANNED',
     assignedEmployeeIds,
@@ -46,15 +49,21 @@ function assignmentInput(body: Record<string, unknown>, existing?: WorkAssignmen
   };
 }
 
-async function validateAssignedEmployees(ids: string[], mode: AssignmentMode) {
-  const employees = await listEmployees();
+async function validateAssignedEmployees(ids: string[], mode: AssignmentMode, shiftType?: ShiftType) {
+  const employees = await listEffectiveEmployees();
   const byId = new Map(employees.map((employee) => [employee.id, employee]));
   for (const id of ids) {
     const employee = byId.get(id);
     if (!employee || employee.role !== 'employee') throw badRequest('Unknown employee');
-    const requiredType = mode === 'work-shift' ? 'part-time' : 'full-time';
-    if (getEmploymentType(employee) !== requiredType) throw badRequest('Employee is not eligible for this assignment mode');
+    if (!isEmployeeEligibleForAssignment(getEmploymentType(employee), mode, shiftType)) throw badRequest('Employee is not eligible for this assignment mode');
   }
+}
+
+async function resolveLegacyShiftType(assignment: WorkAssignment): Promise<WorkAssignment> {
+  if (assignment.assignmentMode !== 'work-shift' || assignment.shiftType) return assignment;
+  const employees = await listEffectiveEmployees();
+  const types = employees.filter((employee) => assignment.assignedEmployeeIds.includes(employee.id)).map(getEmploymentType);
+  return { ...assignment, shiftType: getEffectiveShiftType(assignment, types) };
 }
 
 export default async function handler(request: Request, response: Response) {
@@ -63,7 +72,7 @@ export default async function handler(request: Request, response: Response) {
     const collections = getV13Collections();
     if (request.method === 'GET') {
       const session = await requireSession(request);
-      const assignments = (await listServerDocuments<WorkAssignment>(collections.assignments)).map((document) => ({ ...document.data, id: document.id }));
+      const assignments = await Promise.all((await listServerDocuments<WorkAssignment>(collections.assignments)).map((document) => resolveLegacyShiftType({ ...document.data, id: document.id })));
       return response.status(200).json({
         assignments: session.role === 'employee'
           ? assignments.filter((assignment) => session.employeeId && assignment.assignedEmployeeIds.includes(session.employeeId))
@@ -75,7 +84,7 @@ export default async function handler(request: Request, response: Response) {
       const session = await requireV13Mutation(request, 'supervisor');
       const now = new Date().toISOString();
       const assignment = assignmentInput(request.body || {});
-      await validateAssignedEmployees(assignment.assignedEmployeeIds, assignment.assignmentMode);
+      await validateAssignedEmployees(assignment.assignedEmployeeIds, assignment.assignmentMode, assignment.shiftType);
       const created: WorkAssignment = { ...assignment, createdBy: session.subject, createdAt: now, updatedAt: now, revision: 1 };
       await createServerDocument(collections.assignments, created.id, created as unknown as Record<string, unknown>);
       return response.status(201).json({ assignment: created });
@@ -87,7 +96,7 @@ export default async function handler(request: Request, response: Response) {
       const action = safeString(request.body?.action, 40);
       const document = await getServerDocument<WorkAssignment>(collections.assignments, id);
       if (!document) return response.status(404).json({ error: 'NOT_FOUND' });
-      const assignment = { ...document.data, id };
+      const assignment = await resolveLegacyShiftType({ ...document.data, id });
       const expectedRevision = Number(request.body?.expectedRevision);
       if (!Number.isInteger(expectedRevision) || expectedRevision !== assignment.revision) throw conflict('Assignment changed');
       const submissions = (await listServerDocuments<WorkSubmission>(collections.submissions)).map((item) => item.data).filter((submission) => submission.assignmentId === id);
@@ -98,9 +107,9 @@ export default async function handler(request: Request, response: Response) {
       if (action === 'edit' || action === 'manpower') {
         if (assignment.status === 'CLOSED' || assignment.status === 'CANCELLED') throw conflict('Assignment is not open');
         updated = assignmentInput(request.body?.assignment || {}, assignment);
-        if (submissions.length && (updated.date !== assignment.date || updated.assignmentMode !== assignment.assignmentMode)) throw conflict('Date and mode are locked after submission');
+        if (submissions.length && (updated.date !== assignment.date || updated.assignmentMode !== assignment.assignmentMode || updated.shiftType !== assignment.shiftType)) throw conflict('Date, mode and shift type are locked after submission');
         if ([...submittedIds].some((employeeId) => !updated.assignedEmployeeIds.includes(employeeId))) throw conflict('Submitted employee cannot be removed');
-        await validateAssignedEmployees(updated.assignedEmployeeIds, updated.assignmentMode);
+        await validateAssignedEmployees(updated.assignedEmployeeIds, updated.assignmentMode, updated.shiftType);
       } else if (action === 'cancel') {
         if (submissions.length) throw conflict('Assignment with submissions cannot be cancelled');
         if (assignment.status === 'CLOSED') throw conflict('Closed assignment cannot be cancelled');

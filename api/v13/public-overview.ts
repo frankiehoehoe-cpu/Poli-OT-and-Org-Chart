@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express';
-import { listEmployees, listServerDocuments } from '../_firebaseAdmin.js';
+import { listServerDocuments } from '../_firebaseAdmin.js';
 import { getV13Collections } from '../_v13Collections.js';
-import { getSingaporeDate, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
+import { listEffectiveEmployees } from '../_v13Employees.js';
+import { getEffectiveShiftType, getEmploymentType, getSingaporeDate, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
 
 export interface PublicAssignmentParticipant {
   employeeId: string;
@@ -15,6 +16,8 @@ export interface PublicAssignment {
   id: string;
   date: string;
   assignmentMode: 'ot-task' | 'work-shift';
+  shiftType?: ShiftType;
+  department: string;
   workstation: string;
   product?: string;
   batchNo?: string;
@@ -35,7 +38,7 @@ export default async function handler(request: Request, response: Response) {
     const [assignmentDocuments, submissionDocuments, employees] = await Promise.all([
       listServerDocuments<WorkAssignment>(collections.assignments),
       listServerDocuments<WorkSubmission>(collections.submissions),
-      listEmployees()
+      listEffectiveEmployees()
     ]);
 
     const employeeMap = new Map(employees.map((employee) => [employee.id, employee]));
@@ -50,10 +53,15 @@ export default async function handler(request: Request, response: Response) {
       .map((document) => ({ ...document.data, id: document.id }))
       .filter((assignment) => assignment.date === today && assignment.status !== 'CANCELLED')
       .sort((left, right) => left.plannedStart.localeCompare(right.plannedStart))
-      .map((assignment) => ({
+      .map((assignment) => {
+        const assignedTypes = assignment.assignedEmployeeIds.map((id) => employeeMap.get(id)).filter(Boolean).map((employee) => getEmploymentType(employee!));
+        const shiftType = getEffectiveShiftType(assignment, assignedTypes);
+        return {
         id: assignment.id,
         date: assignment.date,
         assignmentMode: assignment.assignmentMode,
+        ...(shiftType ? { shiftType } : {}),
+        department: assignment.department,
         workstation: assignment.workstation,
         product: assignment.product,
         batchNo: assignment.batchNo,
@@ -64,7 +72,7 @@ export default async function handler(request: Request, response: Response) {
         participants: assignment.assignedEmployeeIds.map((employeeId) => {
           const employee = employeeMap.get(employeeId);
           const submission = submissions.get(`${assignment.id}:${employeeId}`);
-          const employmentType = employee?.employmentType === 'part-time' ? 'part-time' : 'full-time';
+          const employmentType = employee ? getEmploymentType(employee) : 'full-time';
           return {
             employeeId,
             employeeName: employee?.name || employeeId,
@@ -77,7 +85,8 @@ export default async function handler(request: Request, response: Response) {
             } : {})
           };
         })
-      }));
+        };
+      });
 
     return response.status(200).json({ date: today, assignments });
   } catch (error) {

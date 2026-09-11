@@ -1,4 +1,4 @@
-import type { EmployeeMonthAggregate, PartTimeMonthlyForecast, ShiftNotice, WorkAssignment, WorkSubmission } from './workflows';
+import type { EmployeeMonthAggregate, PartTimeMonthlyForecast, ShiftNotice, ShiftType, WorkAssignment, WorkSubmission } from './workflows';
 
 export interface PublicAssignmentParticipant {
   employeeId: string;
@@ -12,6 +12,8 @@ export interface PublicAssignment {
   id: string;
   date: string;
   assignmentMode: 'ot-task' | 'work-shift';
+  shiftType?: ShiftType;
+  department: string;
   workstation: string;
   product?: string;
   batchNo?: string;

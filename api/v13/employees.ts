@@ -4,6 +4,7 @@ import { createServerDocument, deleteServerDocument, getEmployee, getServerDocum
 import { isSameOrigin, requireRole } from '../_session.js';
 import { V13WritesDisabledError, badRequest, requireV13WritesEnabled, safeString, sendApiError } from '../_v13.js';
 import { isV13IsolatedTestMode } from '../_v13Collections.js';
+import { getEffectiveEmployee, setIsolatedEmploymentType } from '../_v13Employees.js';
 import type { EmploymentType } from '../../src/lib/workflows.js';
 
 const requestedEmploymentType = (value: unknown): EmploymentType | undefined =>
@@ -14,8 +15,19 @@ export default async function handler(request: Request, response: Response) {
   try {
     if (!['POST', 'PATCH', 'DELETE'].includes(request.method)) return response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     if (!isSameOrigin(request)) return response.status(403).json({ error: 'FORBIDDEN' });
-    await requireRole(request, 'manager');
-    if (isV13IsolatedTestMode()) throw new V13WritesDisabledError('Employee records are read-only in isolated test mode');
+    const session = await requireRole(request, 'manager');
+
+    if (isV13IsolatedTestMode()) {
+      if (request.method !== 'PATCH') throw new V13WritesDisabledError('Employee create/delete is disabled in isolated test mode');
+      const id = safeString(request.body?.id, 128);
+      const employmentType = requestedEmploymentType(request.body?.employmentType);
+      if (!id || !employmentType) throw badRequest('Employee and employment type are required');
+      requireV13WritesEnabled();
+      const existing = await getEffectiveEmployee(id);
+      if (!existing) return response.status(404).json({ error: 'EMPLOYEE_NOT_FOUND' });
+      await setIsolatedEmploymentType(id, employmentType, session.subject);
+      return response.status(200).json({ employee: publicEmployee({ ...existing, employmentType }) });
+    }
 
     if (request.method === 'POST') {
       const name = safeString(request.body?.name, 160);

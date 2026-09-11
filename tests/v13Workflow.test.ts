@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { requireV13WritesEnabled, V13WritesDisabledError } from '../api/_v13.js';
 import { getV13Collections } from '../api/_v13Collections.js';
+import { resolveEmploymentType } from '../api/_v13Employees.js';
 import {
   aggregateMixedMonth,
   applyEffectiveCorrection,
@@ -8,6 +9,8 @@ import {
   canEmployeeSubmit,
   deterministicSubmissionId,
   getEmploymentType,
+  isEmployeeEligibleForAssignment,
+  isFullTimeOtSubmissionOpen,
   getPartTimeMonthlyForecast,
   shiftNoticeCreatesWorkRecord,
   type ShiftNotice,
@@ -31,6 +34,7 @@ const fullTimeSubmission: WorkSubmission = {
 };
 
 assert.equal(getEmploymentType({}), 'full-time', 'legacy employees remain full-time');
+assert.equal(resolveEmploymentType(undefined, 'part-time'), 'part-time', 'isolated override wins');
 assert.equal(deterministicSubmissionId('a', 'e'), 'a__e');
 assert.equal(calculateWorkedHours('12:00', '20:30'), 8.5);
 assert.equal(canEmployeeSubmit({ employeeId: 'employee-1', employmentType: 'full-time', assignment, singaporeDate: '2026-09-10', submissionExists: false }), true);
@@ -41,29 +45,40 @@ assert.equal(corrected.originalOtHours, 2);
 assert.equal(corrected.effectiveOtHours, 3);
 assert.equal(corrected.correctionHistory?.length, 1);
 
-const partTimeAssignment: WorkAssignment = { ...assignment, id: 'shift-1', assignmentMode: 'work-shift', date: '2026-09-20', plannedStart: '12:00', plannedEnd: '20:00' };
+const partTimeAssignment: WorkAssignment = { ...assignment, id: 'shift-1', assignmentMode: 'work-shift', shiftType: 'PART_TIME_SHIFT', date: '2026-09-20', plannedStart: '12:00', plannedEnd: '20:00' };
+const secondShiftAssignment: WorkAssignment = { ...partTimeAssignment, id: 'shift-2', shiftType: 'SECOND_SHIFT' };
+assert.equal(isEmployeeEligibleForAssignment('part-time', 'work-shift', 'PART_TIME_SHIFT'), true);
+assert.equal(isEmployeeEligibleForAssignment('full-time', 'work-shift', 'PART_TIME_SHIFT'), false);
+assert.equal(isEmployeeEligibleForAssignment('full-time', 'work-shift', 'SECOND_SHIFT'), true);
+assert.equal(isEmployeeEligibleForAssignment('part-time', 'work-shift', 'SECOND_SHIFT'), false);
+assert.equal(canEmployeeSubmit({ employeeId: 'employee-1', employmentType: 'full-time', assignment: secondShiftAssignment, singaporeDate: '2026-09-20', submissionExists: false }), false);
+assert.equal(isFullTimeOtSubmissionOpen('full-time', assignment, '19:59'), false);
+assert.equal(isFullTimeOtSubmissionOpen('full-time', assignment, '20:00'), true);
 const partTimeSubmission: WorkSubmission = {
   ...fullTimeSubmission, id: 'shift-done__employee-1', assignmentId: 'shift-done', employmentTypeSnapshot: 'part-time',
   assignmentMode: 'work-shift', taskDate: '2026-09-05', originalOtHours: undefined, effectiveOtHours: undefined,
   originalStart: '12:00', originalEnd: '20:00', originalWorkedHours: 8, effectiveWorkedHours: 8
 };
-const forecast = getPartTimeMonthlyForecast([partTimeAssignment], [partTimeSubmission], 'employee-1', '2026-09', '2026-09-10');
+const forecast = getPartTimeMonthlyForecast([partTimeAssignment, secondShiftAssignment], [partTimeSubmission], 'employee-1', '2026-09', '2026-09-10');
 assert.deepEqual(forecast, { actualWorkedHours: 8, plannedRemainingHours: 8, projectedMonthTotal: 16, finalMonthHours: 8, isFinal: false });
 
 const aggregates = aggregateMixedMonth('2026-09', [{ id: 'legacy-1', employeeId: 'employee-1', employeeName: 'Employee One', date: '2026-09-01', totalHours: 1.5, multiplier: 1.5 }], [fullTimeSubmission, partTimeSubmission]);
 assert.equal(aggregates[0].fullTimeOtHours, 3.5);
 assert.equal(aggregates[0].partTimeWorkedHours, 8);
+const forbiddenSecondShiftSubmission = { ...fullTimeSubmission, id: 'shift-2__employee-1', assignmentId: 'shift-2', assignmentMode: 'work-shift' as const, shiftTypeSnapshot: 'SECOND_SHIFT' as const, effectiveOtHours: 10 };
+assert.equal(aggregateMixedMonth('2026-09', [], [forbiddenSecondShiftSubmission]).length, 0);
 
 const notice = { id: 'notice-1' } as ShiftNotice;
 assert.equal(shiftNoticeCreatesWorkRecord(notice), false);
 
 assert.deepEqual(getV13Collections({}), {
-  assignments: 'workAssignments', submissions: 'workSubmissions', shiftNotices: 'shiftNotices'
+  assignments: 'workAssignments', submissions: 'workSubmissions', shiftNotices: 'shiftNotices', employeeOverrides: 'otv13_test_employeeOverrides'
 });
 assert.deepEqual(getV13Collections({ OT_V13_ISOLATED_TEST_MODE: 'true' }), {
   assignments: 'otv13_test_workAssignments',
   submissions: 'otv13_test_workSubmissions',
-  shiftNotices: 'otv13_test_shiftNotices'
+  shiftNotices: 'otv13_test_shiftNotices',
+  employeeOverrides: 'otv13_test_employeeOverrides'
 });
 assert.throws(() => requireV13WritesEnabled({}), V13WritesDisabledError);
 assert.throws(() => requireV13WritesEnabled({ OT_V13_WRITES_ENABLED: 'false' }), V13WritesDisabledError);

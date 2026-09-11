@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Role, UserProfile } from '../../types';
-import { getEmploymentType, getSingaporeDate, getSingaporeTime, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from '../../lib/workflows';
+import { getEmploymentType, getSingaporeDate, getSingaporeTime, isEmployeeEligibleForAssignment, isFullTimeOtSubmissionOpen, type EmployeeMonthAggregate, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../lib/workflows';
 import { workflowService } from '../../lib/workflowService';
 
 const workstations = ['Mixing / 搅拌', 'Oven Drying / 烘干', 'Grinding / 研磨', 'Encapsulation / 进胶囊', 'Polishing / 抛光', 'Blistering / 压板', 'Print Code / 打码', 'Sacheting / 茶袋包装', 'Packing / 包装', 'Cleaning / 清洁', 'Changeover / 转线', 'Other Production Work / 其他生产工作'];
@@ -75,13 +75,13 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
     {editing !== undefined && <AssignmentEditor employees={employees} assignment={editing} close={() => setEditing(undefined)} saved={async () => { setEditing(undefined); await load(); }} />}
     <div className="space-y-3">
       {visible.map((assignment) => <article key={assignment.id} className="rounded-2xl border border-slate-200 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-black text-indigo-600">{assignment.assignmentMode === 'work-shift' ? 'WORK SHIFT' : 'OT TASK'} · {assignment.date}</p><h3 className="font-black">{assignment.workstation}</h3><p className="text-sm text-slate-600">{assignment.targetRequirement}</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black">{assignment.status}</span></div>
+        <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-black text-indigo-600">{assignment.shiftType === 'SECOND_SHIFT' ? '2ND SHIFT / 中班' : assignment.shiftType === 'PART_TIME_SHIFT' ? 'PART-TIME SHIFT / 兼职班' : 'OT TASK'} · {assignment.date}</p><h3 className="font-black">{assignment.workstation}</h3><p className="text-sm text-slate-600">{assignment.plannedStart}–{assignment.plannedEnd} · {assignment.targetRequirement}</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black">{assignment.status}</span></div>
         {role === 'employee' && employeeId && <EmployeeSubmission assignment={assignment} employee={employees.find((employee) => employee.id === employeeId)} existing={byAssignmentEmployee.get(`${assignment.id}:${employeeId}`)} saved={load} setError={setError} />}
         {role === 'supervisor' && <>
           <div className="mt-3 space-y-2">{assignment.assignedEmployeeIds.map((id) => {
             const employee = employees.find((item) => item.id === id);
             const submission = byAssignmentEmployee.get(`${assignment.id}:${id}`);
-            const canLateSubmit = Boolean(employee && !submission && assignment.date < getSingaporeDate() && assignment.status !== 'CANCELLED');
+            const canLateSubmit = Boolean(employee && !submission && assignment.shiftType !== 'SECOND_SHIFT' && assignment.date < getSingaporeDate() && assignment.status !== 'CANCELLED');
             return <div key={id} className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm"><strong>{employee?.name || id}</strong><span className="ml-auto">{submission ? submission.employmentTypeSnapshot === 'part-time' ? `${submission.effectiveWorkedHours ?? 0}h worked` : `${submission.effectiveOtHours ?? 0}h OT` : 'NO SUBMISSION'}</span>{submission?.lateEntry && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-black text-orange-700">LATE ENTRY / 主管补录</span>}{submission && <button className="rounded-lg bg-amber-100 px-3 py-2 font-bold" onClick={() => void correct(submission)}>Correct</button>}{canLateSubmit && employee && <button className="rounded-lg bg-orange-100 px-3 py-2 font-bold text-orange-800" onClick={() => void lateSubmit(assignment, employee)}>Late Submission / 漏填补录</button>}</div>;
           })}</div>
           {!['CLOSED', 'CANCELLED'].includes(assignment.status) && <div className="mt-3 flex flex-wrap gap-2"><button className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold" onClick={() => setEditing(assignment)}>Edit</button><button className="rounded-lg bg-indigo-100 px-3 py-2 text-sm font-bold" onClick={() => void action(assignment, assignment.date < getSingaporeDate() ? 'late-close' : 'close')}>Close</button><button className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700" onClick={() => void action(assignment, 'cancel')}>Cancel</button></div>}
@@ -94,17 +94,19 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
 
 function AssignmentEditor({ employees, assignment, close, saved }: { employees: UserProfile[]; assignment: WorkAssignment | null; close: () => void; saved: () => Promise<void> }) {
   const [mode, setMode] = useState(assignment?.assignmentMode || 'ot-task');
+  const [shiftType, setShiftType] = useState<ShiftType>(assignment?.shiftType || 'PART_TIME_SHIFT');
   const [selected, setSelected] = useState<string[]>(assignment?.assignedEmployeeIds || []);
   const [form, setForm] = useState({ date: assignment?.date || getSingaporeDate(), department: assignment?.department || 'Production', workstation: assignment?.workstation || workstations[7], product: assignment?.product || '', batchNo: assignment?.batchNo || '', plannedStart: assignment?.plannedStart || '18:00', plannedEnd: assignment?.plannedEnd || '21:00', targetRequirement: assignment?.targetRequirement || '' });
   const [error, setError] = useState('');
-  const eligible = employees.filter((employee) => getEmploymentType(employee) === (mode === 'work-shift' ? 'part-time' : 'full-time'));
+  const eligible = employees.filter((employee) => isEmployeeEligibleForAssignment(getEmploymentType(employee), mode, mode === 'work-shift' ? shiftType : undefined));
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    try { await workflowService.saveAssignment({ ...form, assignmentMode: mode, taskType: 'output', assignedEmployeeIds: selected }, assignment || undefined); await saved(); }
+    try { await workflowService.saveAssignment({ ...form, assignmentMode: mode, ...(mode === 'work-shift' ? { shiftType } : { shiftType: undefined }), taskType: 'output', assignedEmployeeIds: selected }, assignment || undefined); await saved(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Save failed'); }
   };
   return <form onSubmit={submit} className="grid gap-3 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2">
-    <label className="text-sm font-bold">Assignment Type<select className="mt-1 w-full rounded-xl border p-3" value={mode} disabled={Boolean(assignment)} onChange={(event) => { setMode(event.target.value as 'ot-task' | 'work-shift'); setSelected([]); }}><option value="ot-task">OT Task</option><option value="work-shift">Work Shift</option></select></label>
+    <label className="text-sm font-bold">Assignment Type<select className="mt-1 w-full rounded-xl border p-3" value={mode} disabled={Boolean(assignment)} onChange={(event) => { const nextMode = event.target.value as 'ot-task' | 'work-shift'; setMode(nextMode); setShiftType('PART_TIME_SHIFT'); setSelected([]); }}><option value="ot-task">OT Task</option><option value="work-shift">Work Shift</option></select></label>
+    {mode === 'work-shift' && <label className="text-sm font-bold">Shift Type / 班次类型<select className="mt-1 w-full rounded-xl border p-3" value={shiftType} onChange={(event) => { setShiftType(event.target.value as ShiftType); setSelected([]); }}><option value="PART_TIME_SHIFT">Part-Time Shift / 兼职班</option><option value="SECOND_SHIFT">2nd Shift / 中班</option></select></label>}
     <Field label="Date"><input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })}/></Field>
     <Field label="Department"><input value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })}/></Field>
     <label className="text-sm font-bold">Workstation<select className="mt-1 w-full rounded-xl border p-3" value={form.workstation} onChange={(event) => setForm({ ...form, workstation: event.target.value })}>{workstations.map((station) => <option key={station}>{station}</option>)}</select></label>
@@ -121,10 +123,11 @@ function EmployeeSubmission({ assignment, employee, existing, saved, setError }:
   const [start, setStart] = useState(assignment.plannedStart);
   const [end, setEnd] = useState(assignment.plannedEnd);
   if (!employee) return null;
+  if (assignment.shiftType === 'SECOND_SHIFT') return <div className="mt-3 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-900"><strong>2ND SHIFT / 中班</strong><p>{assignment.date} · {assignment.plannedStart}–{assignment.plannedEnd} · {assignment.workstation}</p><p>{assignment.targetRequirement}</p><p className="mt-1 font-black">NO HOURS SUBMISSION REQUIRED / 无需填写工时</p></div>;
   if (existing) return <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">Submitted: {existing.employmentTypeSnapshot === 'part-time' ? `${existing.effectiveWorkedHours} worked hours` : `${existing.effectiveOtHours} OT hours`}{existing.lateEntry ? ' · Supervisor late entry / 主管补录' : ''}</p>;
   const employmentType = getEmploymentType(employee);
   const isTodayOpen = assignment.date === getSingaporeDate() && !['CLOSED', 'CANCELLED'].includes(assignment.status);
-  const beforeOtOpen = employmentType === 'full-time' && getSingaporeTime() < '20:00';
+  const beforeOtOpen = !isFullTimeOtSubmissionOpen(employmentType, assignment, getSingaporeTime());
   const allowed = isTodayOpen && !beforeOtOpen;
   const submit = async () => {
     try { await workflowService.submit({ assignmentId: assignment.id, ...(employmentType === 'part-time' ? { actualStart: start, actualEnd: end } : { otHours: Number(hours) }) }); await saved(); }

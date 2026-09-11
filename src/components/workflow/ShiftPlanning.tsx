@@ -19,7 +19,11 @@ export function PublicShiftNotices() {
     });
   }, []);
 
+  const secondShifts = assignments.filter((assignment) => assignment.shiftType === 'SECOND_SHIFT' && assignment.status !== 'CLOSED');
+  const hourAssignments = assignments.filter((assignment) => assignment.shiftType !== 'SECOND_SHIFT');
+
   return <div className="space-y-4">
+    {secondShifts.length > 0 && <section className="mx-auto w-full max-w-6xl px-6"><div className="rounded-3xl border border-cyan-200 bg-cyan-50 p-5 shadow-sm"><p className="text-xs font-black uppercase tracking-widest text-cyan-800">2ND SHIFT / 中班安排</p>{secondShifts.map((assignment) => <article key={assignment.id} className="mt-3 rounded-2xl border border-cyan-200 bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="font-black text-slate-900">{assignment.department} · {assignment.workstation}</h3><p className="text-sm font-bold text-slate-600">{assignment.date} · {assignment.plannedStart}–{assignment.plannedEnd}</p>{assignment.targetRequirement && <p className="mt-1 text-sm text-slate-600">{assignment.targetRequirement}</p>}</div><span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-800">NO HOURS REQUIRED</span></div><p className="mt-3 text-sm"><strong>Assigned / 安排：</strong>{assignment.participants.map((participant) => participant.employeeName).join(', ')}</p></article>)}</div></section>}
     <section className="mx-auto w-full max-w-6xl px-6">
       <div className="rounded-3xl border border-indigo-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -30,11 +34,11 @@ export function PublicShiftNotices() {
           <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">TODAY ONLY / 仅今日</span>
         </div>
 
-        {!assignments.length ? (
+        {!hourAssignments.length ? (
           <p className="mt-4 rounded-2xl bg-slate-50 p-5 text-center text-sm font-black text-slate-500">NO OT ASSIGNMENT FOR TONIGHT / 今晚没有加班安排</p>
         ) : (
           <div className="mt-4 space-y-3">
-            {assignments.map((assignment) => (
+            {hourAssignments.map((assignment) => (
               <article key={assignment.id} className="rounded-2xl border border-slate-200 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>

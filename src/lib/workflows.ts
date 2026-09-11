@@ -1,5 +1,6 @@
 export type EmploymentType = 'full-time' | 'part-time';
 export type AssignmentMode = 'ot-task' | 'work-shift';
+export type ShiftType = 'PART_TIME_SHIFT' | 'SECOND_SHIFT';
 export type WorkAssignmentStatus = 'PLANNED' | 'IN_PROGRESS' | 'CLOSED' | 'CANCELLED';
 export type WorkTaskType = 'output' | 'non-output';
 
@@ -14,6 +15,7 @@ export interface WorkAssignment {
   plannedEnd: string;
   taskType: WorkTaskType;
   assignmentMode: AssignmentMode;
+  shiftType?: ShiftType;
   targetRequirement: string;
   status: WorkAssignmentStatus;
   assignedEmployeeIds: string[];
@@ -49,6 +51,7 @@ export interface WorkSubmission {
   employeeNameSnapshot: string;
   employmentTypeSnapshot: EmploymentType;
   assignmentMode: AssignmentMode;
+  shiftTypeSnapshot?: ShiftType;
   taskDate: string;
   assignedWorkstation: string;
   actualWorkstation: string;
@@ -129,6 +132,30 @@ export interface PartTimeMonthlyForecast {
 export const getEmploymentType = (employee: { employmentType?: EmploymentType }): EmploymentType =>
   employee.employmentType ?? 'full-time';
 
+export const getEffectiveShiftType = (
+  assignment: Pick<WorkAssignment, 'assignmentMode' | 'shiftType'>,
+  assignedEmploymentTypes: EmploymentType[] = []
+): ShiftType | undefined => {
+  if (assignment.assignmentMode !== 'work-shift') return undefined;
+  return assignment.shiftType ?? (assignedEmploymentTypes.includes('part-time') ? 'PART_TIME_SHIFT' : 'SECOND_SHIFT');
+};
+
+export const isEmployeeEligibleForAssignment = (
+  employmentType: EmploymentType,
+  assignmentMode: AssignmentMode,
+  shiftType?: ShiftType
+): boolean => assignmentMode === 'ot-task'
+  ? employmentType === 'full-time' && shiftType === undefined
+  : shiftType === 'PART_TIME_SHIFT'
+    ? employmentType === 'part-time'
+    : shiftType === 'SECOND_SHIFT' && employmentType === 'full-time';
+
+export const isFullTimeOtSubmissionOpen = (
+  employmentType: EmploymentType,
+  assignment: Pick<WorkAssignment, 'assignmentMode'>,
+  singaporeTime: string
+): boolean => employmentType !== 'full-time' || assignment.assignmentMode !== 'ot-task' || singaporeTime >= '20:00';
+
 export const deterministicSubmissionId = (assignmentId: string, employeeId: string) =>
   `${assignmentId}__${employeeId}`;
 
@@ -169,9 +196,8 @@ export function canEmployeeSubmit(input: {
   if (submissionExists || assignment.date !== singaporeDate) return false;
   if (assignment.status === 'CLOSED' || assignment.status === 'CANCELLED') return false;
   if (!assignment.assignedEmployeeIds.includes(employeeId)) return false;
-  return employmentType === 'part-time'
-    ? assignment.assignmentMode === 'work-shift'
-    : assignment.assignmentMode === 'ot-task';
+  if (assignment.shiftType === 'SECOND_SHIFT') return false;
+  return isEmployeeEligibleForAssignment(employmentType, assignment.assignmentMode, assignment.shiftType ?? (employmentType === 'part-time' ? 'PART_TIME_SHIFT' : undefined));
 }
 
 export function applyEffectiveCorrection(
@@ -248,7 +274,7 @@ export function aggregateMixedMonth(
     aggregate.fullTimeOtHours += entry.totalHours;
     aggregate.otEntryCount += 1;
   });
-  submissions.filter((submission) => submission.taskDate.startsWith(month)).forEach((submission) => {
+  submissions.filter((submission) => submission.taskDate.startsWith(month) && submission.shiftTypeSnapshot !== 'SECOND_SHIFT').forEach((submission) => {
     const aggregate = ensure(submission.employeeId, submission.employeeNameSnapshot);
     if (submission.employmentTypeSnapshot === 'part-time') {
       aggregate.partTimeWorkedHours += submission.effectiveWorkedHours ?? submission.originalWorkedHours ?? 0;
@@ -283,6 +309,7 @@ export function getPartTimeMonthlyForecast(
   assignments.forEach((assignment) => {
     if (
       assignment.assignmentMode !== 'work-shift' ||
+      assignment.shiftType === 'SECOND_SHIFT' ||
       assignment.status === 'CANCELLED' ||
       !assignment.date.startsWith(month) ||
       assignment.date < currentDate ||

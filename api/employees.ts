@@ -1,10 +1,11 @@
 import type { Request, Response } from 'express';
-import { listEmployees, publicEmployee } from './_firebaseAdmin.js';
+import { publicEmployee } from './_firebaseAdmin.js';
+import { listEffectiveEmployees } from './_v13Employees.js';
 
 export default async function handler(request: Request, response: Response) {
   if (request.method !== 'GET') return response.status(405).json({ error: 'Method not allowed' });
   try {
-    const employees = (await listEmployees()).map(publicEmployee);
+    const employees = (await listEffectiveEmployees()).map(publicEmployee);
     response.setHeader('Cache-Control', 'private, no-store');
     return response.status(200).json({ employees });
   } catch (error) {

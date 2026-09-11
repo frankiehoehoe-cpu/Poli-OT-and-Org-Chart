@@ -617,9 +617,9 @@ export default function ManagerPortal() {
                     </select>
                   </div>
                   {OT_V13_ENABLED && <div>
-                    <p className="block text-sm font-bold text-slate-800 mb-2">Employment Type</p>
+                    <p className="block text-sm font-bold text-slate-800 mb-2">Employment Type / 雇佣类型</p>
                     <select value={newEmploymentType} onChange={(event) => setNewEmploymentType(event.target.value as 'full-time' | 'part-time')} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 font-bold">
-                      <option value="full-time">Full-Time</option><option value="part-time">Part-Time</option>
+                      <option value="full-time">Full-Time / 全职</option><option value="part-time">Part-Time / 兼职</option>
                     </select>
                   </div>}
                   <div className="flex gap-3">

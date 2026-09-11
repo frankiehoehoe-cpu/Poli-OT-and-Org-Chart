@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
-import { listEmployees, listServerDocuments } from '../_firebaseAdmin.js';
+import { listServerDocuments } from '../_firebaseAdmin.js';
 import { getV13Collections } from '../_v13Collections.js';
+import { listEffectiveEmployees } from '../_v13Employees.js';
 import { requireSession } from '../_session.js';
 import { safeString, sendApiError } from '../_v13.js';
 import { aggregateMixedMonth, getEmploymentType, getPartTimeMonthlyForecast, type LegacyOtRecord, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
@@ -17,7 +18,7 @@ export default async function handler(request: Request, response: Response) {
       listServerDocuments<LegacyOtRecord>('overtime'),
       listServerDocuments<WorkSubmission>(collections.submissions),
       listServerDocuments<WorkAssignment>(collections.assignments),
-      listEmployees()
+      listEffectiveEmployees()
     ]);
     const legacy = legacyDocuments.map((document) => ({ ...document.data, id: document.id }));
     const submissions = submissionDocuments.map((document) => ({ ...document.data, id: document.id }));
