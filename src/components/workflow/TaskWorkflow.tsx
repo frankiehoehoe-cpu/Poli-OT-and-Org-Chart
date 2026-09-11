@@ -10,6 +10,10 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
   const [submissions, setSubmissions] = useState<WorkSubmission[]>([]);
   const [editing, setEditing] = useState<WorkAssignment | null | undefined>(undefined);
   const [error, setError] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [historyStatus, setHistoryStatus] = useState<'ALL' | 'CLOSED' | 'CANCELLED'>('ALL');
+
   const load = useCallback(async () => {
     try {
       const [nextAssignments, nextSubmissions] = await Promise.all([workflowService.assignments(), workflowService.submissions()]);
@@ -23,6 +27,16 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
   useEffect(() => { void load(); }, [load]);
   const byAssignmentEmployee = useMemo(() => new Map(submissions.map((submission) => [`${submission.assignmentId}:${submission.employeeId}`, submission])), [submissions]);
   const visible = employeeId ? assignments.filter((assignment) => assignment.assignedEmployeeIds.includes(employeeId)) : assignments;
+  const supervisorActive = role === 'supervisor' ? visible.filter((assignment) => !['CLOSED', 'CANCELLED'].includes(assignment.status)) : visible;
+  const supervisorHistory = role === 'supervisor' ? visible.filter((assignment) => ['CLOSED', 'CANCELLED'].includes(assignment.status)) : [];
+  const closedCount = supervisorHistory.filter((assignment) => assignment.status === 'CLOSED').length;
+  const cancelledCount = supervisorHistory.filter((assignment) => assignment.status === 'CANCELLED').length;
+  const filteredHistory = supervisorHistory.filter((assignment) => {
+    if (historyStatus !== 'ALL' && assignment.status !== historyStatus) return false;
+    const assignedNames = assignment.assignedEmployeeIds.map((id) => employees.find((employee) => employee.id === id)?.name || '').join(' ');
+    const haystack = `${assignment.date} ${assignment.workstation} ${assignment.targetRequirement} ${assignedNames}`.toLowerCase();
+    return haystack.includes(historyQuery.trim().toLowerCase());
+  });
 
   const action = async (assignment: WorkAssignment, value: 'cancel' | 'close' | 'late-close') => {
     try {
@@ -66,6 +80,20 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
     } catch (reasonValue) { setError(reasonValue instanceof Error ? reasonValue.message : 'Late submission failed'); }
   };
 
+  const renderAssignment = (assignment: WorkAssignment) => <article key={assignment.id} className="rounded-2xl border border-slate-200 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-black text-indigo-600">{assignment.shiftType === 'SECOND_SHIFT' ? '2ND SHIFT / 中班' : assignment.shiftType === 'PART_TIME_SHIFT' ? 'PART-TIME SHIFT / 兼职班' : 'OT TASK'} · {assignment.date}</p><h3 className="font-black">{assignment.workstation}</h3><p className="text-sm text-slate-600">{assignment.plannedStart}–{assignment.plannedEnd} · {assignment.targetRequirement}</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black">{assignment.status}</span></div>
+    {role === 'employee' && employeeId && <EmployeeSubmission assignment={assignment} employee={employees.find((employee) => employee.id === employeeId)} existing={byAssignmentEmployee.get(`${assignment.id}:${employeeId}`)} saved={load} setError={setError} />}
+    {role === 'supervisor' && <>
+      <div className="mt-3 space-y-2">{assignment.assignedEmployeeIds.map((id) => {
+        const employee = employees.find((item) => item.id === id);
+        const submission = byAssignmentEmployee.get(`${assignment.id}:${id}`);
+        const canLateSubmit = Boolean(employee && !submission && assignment.shiftType !== 'SECOND_SHIFT' && assignment.date < getSingaporeDate() && assignment.status !== 'CANCELLED');
+        return <div key={id} className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm"><strong>{employee?.name || id}</strong><span className="ml-auto">{submission ? submission.employmentTypeSnapshot === 'part-time' ? `${submission.effectiveWorkedHours ?? 0}h worked` : `${submission.effectiveOtHours ?? 0}h OT` : 'NO SUBMISSION'}</span>{submission?.lateEntry && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-black text-orange-700">LATE ENTRY / 主管补录</span>}{submission && <button className="rounded-lg bg-amber-100 px-3 py-2 font-bold" onClick={() => void correct(submission)}>Correct</button>}{canLateSubmit && employee && <button className="rounded-lg bg-orange-100 px-3 py-2 font-bold text-orange-800" onClick={() => void lateSubmit(assignment, employee)}>Late Submission / 漏填补录</button>}</div>;
+      })}</div>
+      {!['CLOSED', 'CANCELLED'].includes(assignment.status) && <div className="mt-3 flex flex-wrap gap-2"><button className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold" onClick={() => setEditing(assignment)}>Edit</button><button className="rounded-lg bg-indigo-100 px-3 py-2 text-sm font-bold" onClick={() => void action(assignment, assignment.date < getSingaporeDate() ? 'late-close' : 'close')}>Close</button><button className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700" onClick={() => void action(assignment, 'cancel')}>Cancel</button></div>}
+    </>}
+  </article>;
+
   return <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5">
     <div className="flex items-center justify-between gap-3">
       <div><p className="text-xs font-black uppercase tracking-widest text-indigo-600">OT PRO V1.3</p><h2 className="text-xl font-black">Work Assignments / 工作任务</h2></div>
@@ -73,22 +101,26 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
     </div>
     {error && <p className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
     {editing !== undefined && <AssignmentEditor employees={employees} assignment={editing} close={() => setEditing(undefined)} saved={async () => { setEditing(undefined); await load(); }} />}
+
     <div className="space-y-3">
-      {visible.map((assignment) => <article key={assignment.id} className="rounded-2xl border border-slate-200 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-black text-indigo-600">{assignment.shiftType === 'SECOND_SHIFT' ? '2ND SHIFT / 中班' : assignment.shiftType === 'PART_TIME_SHIFT' ? 'PART-TIME SHIFT / 兼职班' : 'OT TASK'} · {assignment.date}</p><h3 className="font-black">{assignment.workstation}</h3><p className="text-sm text-slate-600">{assignment.plannedStart}–{assignment.plannedEnd} · {assignment.targetRequirement}</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black">{assignment.status}</span></div>
-        {role === 'employee' && employeeId && <EmployeeSubmission assignment={assignment} employee={employees.find((employee) => employee.id === employeeId)} existing={byAssignmentEmployee.get(`${assignment.id}:${employeeId}`)} saved={load} setError={setError} />}
-        {role === 'supervisor' && <>
-          <div className="mt-3 space-y-2">{assignment.assignedEmployeeIds.map((id) => {
-            const employee = employees.find((item) => item.id === id);
-            const submission = byAssignmentEmployee.get(`${assignment.id}:${id}`);
-            const canLateSubmit = Boolean(employee && !submission && assignment.shiftType !== 'SECOND_SHIFT' && assignment.date < getSingaporeDate() && assignment.status !== 'CANCELLED');
-            return <div key={id} className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm"><strong>{employee?.name || id}</strong><span className="ml-auto">{submission ? submission.employmentTypeSnapshot === 'part-time' ? `${submission.effectiveWorkedHours ?? 0}h worked` : `${submission.effectiveOtHours ?? 0}h OT` : 'NO SUBMISSION'}</span>{submission?.lateEntry && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-black text-orange-700">LATE ENTRY / 主管补录</span>}{submission && <button className="rounded-lg bg-amber-100 px-3 py-2 font-bold" onClick={() => void correct(submission)}>Correct</button>}{canLateSubmit && employee && <button className="rounded-lg bg-orange-100 px-3 py-2 font-bold text-orange-800" onClick={() => void lateSubmit(assignment, employee)}>Late Submission / 漏填补录</button>}</div>;
-          })}</div>
-          {!['CLOSED', 'CANCELLED'].includes(assignment.status) && <div className="mt-3 flex flex-wrap gap-2"><button className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold" onClick={() => setEditing(assignment)}>Edit</button><button className="rounded-lg bg-indigo-100 px-3 py-2 text-sm font-bold" onClick={() => void action(assignment, assignment.date < getSingaporeDate() ? 'late-close' : 'close')}>Close</button><button className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700" onClick={() => void action(assignment, 'cancel')}>Cancel</button></div>}
-        </>}
-      </article>)}
-      {!visible.length && <p className="rounded-2xl bg-slate-50 p-6 text-center text-sm font-bold text-slate-500">No V1.3 assignments.</p>}
+      {(role === 'supervisor' ? supervisorActive : visible).map(renderAssignment)}
+      {role === 'supervisor' && !supervisorActive.length && <p className="rounded-2xl bg-slate-50 p-6 text-center text-sm font-bold text-slate-500">No active V1.3 assignments / 暂无进行中的任务</p>}
+      {role !== 'supervisor' && !visible.length && <p className="rounded-2xl bg-slate-50 p-6 text-center text-sm font-bold text-slate-500">No V1.3 assignments.</p>}
     </div>
+
+    {role === 'supervisor' && supervisorHistory.length > 0 && <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <button type="button" className="flex w-full items-center justify-between gap-3 text-left" onClick={() => setShowHistory((value) => !value)}>
+        <div><p className="font-black text-slate-900">Task History / 历史记录</p><p className="mt-1 text-xs font-bold text-slate-500">Closed {closedCount} · Cancelled {cancelledCount}</p></div>
+        <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-indigo-700 shadow-sm">{showHistory ? 'Hide / 收起' : 'View History / 查看记录'}</span>
+      </button>
+      {showHistory && <div className="mt-4 space-y-3">
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+          <input className="rounded-xl border bg-white p-3 text-sm" placeholder="Search date, employee, workstation / 搜索日期、员工、工位" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} />
+          <select className="rounded-xl border bg-white p-3 text-sm font-bold" value={historyStatus} onChange={(event) => setHistoryStatus(event.target.value as 'ALL' | 'CLOSED' | 'CANCELLED')}><option value="ALL">All History / 全部</option><option value="CLOSED">Closed / 已关闭</option><option value="CANCELLED">Cancelled / 已取消</option></select>
+        </div>
+        {filteredHistory.length > 0 ? filteredHistory.map(renderAssignment) : <p className="rounded-xl bg-white p-4 text-center text-sm font-bold text-slate-500">No matching history / 没有符合的历史记录</p>}
+      </div>}
+    </section>}
   </section>;
 }
 
