@@ -2,13 +2,13 @@ import type { Request, Response } from 'express';
 import { listServerDocuments } from '../_firebaseAdmin.js';
 import { getV13Collections } from '../_v13Collections.js';
 import { listEffectiveEmployees } from '../_v13Employees.js';
-import { getEffectiveShiftType, getEmploymentType, getSingaporeDate, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
+import { getEffectiveShiftType, getEmploymentType, getSingaporeDate, isEmployeeEligibleForAssignment, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
 
 export interface PublicAssignmentParticipant {
   employeeId: string;
   employeeName: string;
   employmentType: 'full-time' | 'part-time';
-  status: 'PENDING' | 'SUBMITTED';
+  status: 'PENDING' | 'SUBMITTED' | 'MISMATCH';
   effectiveHours?: number;
 }
 
@@ -28,12 +28,19 @@ export interface PublicAssignment {
   participants: PublicAssignmentParticipant[];
 }
 
+function addCalendarDays(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const value = new Date(Date.UTC(year, month - 1, day + days));
+  return value.toISOString().slice(0, 10);
+}
+
 export default async function handler(request: Request, response: Response) {
   response.setHeader('Cache-Control', 'private, no-store');
   if (request.method !== 'GET') return response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
 
   try {
     const today = getSingaporeDate();
+    const secondShiftPreviewEnd = addCalendarDays(today, 2);
     const collections = getV13Collections();
     const [assignmentDocuments, submissionDocuments, employees] = await Promise.all([
       listServerDocuments<WorkAssignment>(collections.assignments),
@@ -51,12 +58,15 @@ export default async function handler(request: Request, response: Response) {
 
     const assignments: PublicAssignment[] = assignmentDocuments
       .map((document) => ({ ...document.data, id: document.id }))
-      .filter((assignment) => assignment.date === today && assignment.status !== 'CANCELLED')
-      .sort((left, right) => left.plannedStart.localeCompare(right.plannedStart))
+      .filter((assignment) => assignment.status !== 'CANCELLED')
       .map((assignment) => {
         const assignedTypes = assignment.assignedEmployeeIds.map((id) => employeeMap.get(id)).filter(Boolean).map((employee) => getEmploymentType(employee!));
         const shiftType = getEffectiveShiftType(assignment, assignedTypes);
-        return {
+        return { assignment, shiftType };
+      })
+      .filter(({ assignment, shiftType }) => assignment.date === today || (shiftType === 'SECOND_SHIFT' && assignment.date > today && assignment.date <= secondShiftPreviewEnd))
+      .sort((left, right) => left.assignment.date.localeCompare(right.assignment.date) || left.assignment.plannedStart.localeCompare(right.assignment.plannedStart))
+      .map(({ assignment, shiftType }) => ({
         id: assignment.id,
         date: assignment.date,
         assignmentMode: assignment.assignmentMode,
@@ -73,11 +83,12 @@ export default async function handler(request: Request, response: Response) {
           const employee = employeeMap.get(employeeId);
           const submission = submissions.get(`${assignment.id}:${employeeId}`);
           const employmentType = employee ? getEmploymentType(employee) : 'full-time';
+          const eligible = isEmployeeEligibleForAssignment(employmentType, assignment.assignmentMode, shiftType);
           return {
             employeeId,
             employeeName: employee?.name || employeeId,
             employmentType,
-            status: submission ? 'SUBMITTED' : 'PENDING',
+            status: submission ? 'SUBMITTED' as const : eligible ? 'PENDING' as const : 'MISMATCH' as const,
             ...(submission ? {
               effectiveHours: submission.employmentTypeSnapshot === 'part-time'
                 ? submission.effectiveWorkedHours ?? submission.originalWorkedHours ?? 0
@@ -85,8 +96,7 @@ export default async function handler(request: Request, response: Response) {
             } : {})
           };
         })
-        };
-      });
+      }));
 
     return response.status(200).json({ date: today, assignments });
   } catch (error) {
