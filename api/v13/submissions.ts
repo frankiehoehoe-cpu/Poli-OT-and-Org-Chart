@@ -32,6 +32,66 @@ export default async function handler(request: Request, response: Response) {
       });
     }
 
+    if (request.method === 'POST' && request.body?.action === 'late-submit') {
+      const session = await requireV13Mutation(request, 'supervisor');
+      const assignmentId = safeString(request.body?.assignmentId, 128);
+      const employeeId = safeString(request.body?.employeeId, 128);
+      const reason = safeString(request.body?.reason, 1000);
+      if (!assignmentId || !employeeId || !reason) throw badRequest('Assignment, employee and late-entry reason are required');
+      const assignmentDocument = await getServerDocument<WorkAssignment>(collections.assignments, assignmentId);
+      if (!assignmentDocument) return response.status(404).json({ error: 'ASSIGNMENT_NOT_FOUND' });
+      const assignment = { ...assignmentDocument.data, id: assignmentId };
+      if (assignment.status === 'CANCELLED') throw conflict('Cancelled assignment cannot receive a late submission');
+      if (assignment.date >= getSingaporeDate()) throw conflict('Late submission is only available for past assignment dates');
+      if (!assignment.assignedEmployeeIds.includes(employeeId)) throw conflict('Employee is not assigned to this assignment');
+      const employee = await getEmployee(employeeId);
+      if (!employee || employee.role !== 'employee') throw Object.assign(new Error('Employee not found'), { statusCode: 404 });
+      const employmentType = getEmploymentType(employee);
+      if (employmentType === 'full-time' && assignment.assignmentMode !== 'ot-task') throw conflict('Full-Time late entry requires an OT task');
+      if (employmentType === 'part-time' && assignment.assignmentMode !== 'work-shift') throw conflict('Part-Time late entry requires a work shift');
+      const id = deterministicSubmissionId(assignmentId, employeeId);
+      const existing = await getServerDocument<WorkSubmission>(collections.submissions, id);
+      if (existing) throw conflict('Submission already exists');
+      const now = new Date().toISOString();
+      const common = {
+        id,
+        assignmentId,
+        employeeId,
+        employeeNameSnapshot: employee.name,
+        employmentTypeSnapshot: employmentType,
+        assignmentMode: assignment.assignmentMode,
+        taskDate: assignment.date,
+        assignedWorkstation: assignment.workstation,
+        actualWorkstation: safeString(request.body?.actualWorkstation, 200) || assignment.workstation,
+        submissionStatus: 'SUBMITTED' as const,
+        submittedAt: now,
+        createdAt: now,
+        updatedAt: now,
+        correctionHistory: [],
+        lateEntry: true,
+        enteredByRole: 'supervisor' as const,
+        enteredBy: session.subject,
+        lateEntryReason: reason,
+        lateEnteredAt: now
+      };
+      let submission: WorkSubmission;
+      if (employmentType === 'full-time') {
+        const hours = Number(request.body?.otHours);
+        if (!Number.isFinite(hours) || hours < 0.5 || hours > 12 || !Number.isInteger(hours * 2)) throw badRequest('OT hours must use 0.5-hour increments between 0.5 and 12');
+        submission = { ...common, originalOtHours: hours, effectiveOtHours: hours };
+      } else {
+        const originalStart = safeString(request.body?.actualStart, 5);
+        const originalEnd = safeString(request.body?.actualEnd, 5);
+        const workedHours = calculateWorkedHours(originalStart, originalEnd);
+        if (workedHours === null) throw badRequest('Actual start and end are invalid');
+        submission = { ...common, originalStart, originalEnd, originalWorkedHours: workedHours, effectiveWorkedHours: workedHours };
+      }
+      await commitServerDocuments([
+        { collection: collections.submissions, id, data: submission as unknown as Record<string, unknown>, exists: false }
+      ]);
+      return response.status(201).json({ submission });
+    }
+
     if (request.method === 'POST') {
       const session = await requireV13Mutation(request, 'employee');
       if (!session.employeeId) throw Object.assign(new Error('Employee identity required'), { statusCode: 401 });
