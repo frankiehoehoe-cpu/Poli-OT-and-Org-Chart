@@ -72,7 +72,7 @@ export function PublicShiftNotices() {
       </div>
     </section>
 
-    {notices.length > 0 && <section className="mx-auto w-full max-w-6xl px-6"><div className="rounded-3xl border border-amber-200 bg-amber-50 p-5"><p className="text-xs font-black uppercase tracking-widest text-amber-700">Operational Shift Notice</p>{notices.map((notice) => <div key={notice.id} className="mt-2"><strong>{notice.shiftName}</strong><p className="text-sm">{notice.effectiveStartDate}–{notice.effectiveEndDate} · {notice.startTime}–{notice.endTime}</p>{notice.note && <p className="text-sm text-slate-600">{notice.note}</p>}</div>)}</div></section>}
+    {notices.length > 0 && <section className="mx-auto w-full max-w-6xl px-6"><div className="rounded-3xl border border-amber-200 bg-amber-50 p-5"><p className="text-xs font-black uppercase tracking-widest text-amber-700">Operational Shift Notice</p>{notices.map((notice) => <div key={notice.id} className="mt-2"><strong>{notice.shiftName}</strong><p className="text-sm">{notice.effectiveStartDate}–{notice.effectiveEndDate} · {notice.startTime}–{notice.endTime}</p>{notice.assignedEmployeeNamesSnapshot?.length > 0 && <p className="mt-1 text-sm"><strong>Assigned / 安排：</strong>{notice.assignedEmployeeNamesSnapshot.join(', ')}</p>}{notice.note && <p className="text-sm text-slate-600">{notice.note}</p>}</div>)}</div></section>}
   </div>;
 }
 
