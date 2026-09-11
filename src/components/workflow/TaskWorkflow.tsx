@@ -48,6 +48,24 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Correction failed'); }
   };
 
+  const lateSubmit = async (assignment: WorkAssignment, employee: UserProfile) => {
+    const reason = window.prompt('Late submission reason / 漏填原因');
+    if (!reason?.trim()) return;
+    try {
+      if (getEmploymentType(employee) === 'part-time') {
+        const actualStart = window.prompt('Actual Start / 实际开始时间', assignment.plannedStart);
+        const actualEnd = window.prompt('Actual End / 实际结束时间', assignment.plannedEnd);
+        if (!actualStart || !actualEnd) return;
+        await workflowService.lateSubmit({ assignmentId: assignment.id, employeeId: employee.id, reason: reason.trim(), actualStart, actualEnd });
+      } else {
+        const candidate = window.prompt('Actual OT Hours / 实际加班时数');
+        if (!candidate) return;
+        await workflowService.lateSubmit({ assignmentId: assignment.id, employeeId: employee.id, reason: reason.trim(), otHours: Number(candidate) });
+      }
+      await load();
+    } catch (reasonValue) { setError(reasonValue instanceof Error ? reasonValue.message : 'Late submission failed'); }
+  };
+
   return <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5">
     <div className="flex items-center justify-between gap-3">
       <div><p className="text-xs font-black uppercase tracking-widest text-indigo-600">OT PRO V1.3</p><h2 className="text-xl font-black">Work Assignments / 工作任务</h2></div>
@@ -63,7 +81,8 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
           <div className="mt-3 space-y-2">{assignment.assignedEmployeeIds.map((id) => {
             const employee = employees.find((item) => item.id === id);
             const submission = byAssignmentEmployee.get(`${assignment.id}:${id}`);
-            return <div key={id} className="flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm"><strong>{employee?.name || id}</strong><span className="ml-auto">{submission ? submission.employmentTypeSnapshot === 'part-time' ? `${submission.effectiveWorkedHours ?? 0}h worked` : `${submission.effectiveOtHours ?? 0}h OT` : 'NO SUBMISSION'}</span>{submission && <button className="rounded-lg bg-amber-100 px-3 py-2 font-bold" onClick={() => void correct(submission)}>Correct</button>}</div>;
+            const canLateSubmit = Boolean(employee && !submission && assignment.date < getSingaporeDate() && assignment.status !== 'CANCELLED');
+            return <div key={id} className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm"><strong>{employee?.name || id}</strong><span className="ml-auto">{submission ? submission.employmentTypeSnapshot === 'part-time' ? `${submission.effectiveWorkedHours ?? 0}h worked` : `${submission.effectiveOtHours ?? 0}h OT` : 'NO SUBMISSION'}</span>{submission?.lateEntry && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-black text-orange-700">LATE ENTRY / 主管补录</span>}{submission && <button className="rounded-lg bg-amber-100 px-3 py-2 font-bold" onClick={() => void correct(submission)}>Correct</button>}{canLateSubmit && employee && <button className="rounded-lg bg-orange-100 px-3 py-2 font-bold text-orange-800" onClick={() => void lateSubmit(assignment, employee)}>Late Submission / 漏填补录</button>}</div>;
           })}</div>
           {!['CLOSED', 'CANCELLED'].includes(assignment.status) && <div className="mt-3 flex flex-wrap gap-2"><button className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold" onClick={() => setEditing(assignment)}>Edit</button><button className="rounded-lg bg-indigo-100 px-3 py-2 text-sm font-bold" onClick={() => void action(assignment, assignment.date < getSingaporeDate() ? 'late-close' : 'close')}>Close</button><button className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700" onClick={() => void action(assignment, 'cancel')}>Cancel</button></div>}
         </>}
@@ -102,7 +121,7 @@ function EmployeeSubmission({ assignment, employee, existing, saved, setError }:
   const [start, setStart] = useState(assignment.plannedStart);
   const [end, setEnd] = useState(assignment.plannedEnd);
   if (!employee) return null;
-  if (existing) return <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">Submitted: {existing.employmentTypeSnapshot === 'part-time' ? `${existing.effectiveWorkedHours} worked hours` : `${existing.effectiveOtHours} OT hours`}</p>;
+  if (existing) return <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">Submitted: {existing.employmentTypeSnapshot === 'part-time' ? `${existing.effectiveWorkedHours} worked hours` : `${existing.effectiveOtHours} OT hours`}{existing.lateEntry ? ' · Supervisor late entry / 主管补录' : ''}</p>;
   const employmentType = getEmploymentType(employee);
   const isTodayOpen = assignment.date === getSingaporeDate() && !['CLOSED', 'CANCELLED'].includes(assignment.status);
   const beforeOtOpen = employmentType === 'full-time' && getSingaporeTime() < '20:00';
@@ -142,7 +161,7 @@ export function WorkHistory({ employeeId, month }: { employeeId: string; month: 
       setAggregate(summary.aggregates.find((item) => item.employeeId === employeeId) || null);
     });
   }, [employeeId, month]);
-  return <section className="rounded-3xl border bg-white p-5"><h2 className="font-black">V1.3 Work History</h2>{aggregate && <p className="mt-2 text-sm font-bold text-slate-600">Month total: {aggregate.fullTimeOtHours.toFixed(1)}h FT OT · {aggregate.partTimeWorkedHours.toFixed(1)}h PT worked</p>}{submissions.map((submission) => <div key={submission.id} className="mt-2 flex justify-between rounded-xl bg-slate-50 p-3 text-sm"><span>{submission.taskDate} · {submission.actualWorkstation}</span><strong>{submission.employmentTypeSnapshot === 'part-time' ? `${submission.effectiveWorkedHours || 0}h worked` : `${submission.effectiveOtHours || 0}h OT`}</strong></div>)}</section>;
+  return <section className="rounded-3xl border bg-white p-5"><h2 className="font-black">V1.3 Work History</h2>{aggregate && <p className="mt-2 text-sm font-bold text-slate-600">Month total: {aggregate.fullTimeOtHours.toFixed(1)}h FT OT · {aggregate.partTimeWorkedHours.toFixed(1)}h PT worked</p>}{submissions.map((submission) => <div key={submission.id} className="mt-2 flex justify-between rounded-xl bg-slate-50 p-3 text-sm"><span>{submission.taskDate} · {submission.actualWorkstation}{submission.lateEntry ? ' · LATE ENTRY / 主管补录' : ''}</span><strong>{submission.employmentTypeSnapshot === 'part-time' ? `${submission.effectiveWorkedHours || 0}h worked` : `${submission.effectiveOtHours || 0}h OT`}</strong></div>)}</section>;
 }
 
 export function MixedMonthAnalytics({ month }: { month: string }) {
