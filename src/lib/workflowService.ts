@@ -60,6 +60,9 @@ export const workflowService = {
   async submit(input: Record<string, unknown>): Promise<WorkSubmission> {
     return (await api<{ submission: WorkSubmission }>('/api/v13/submissions', { method: 'POST', body: JSON.stringify(input) })).submission;
   },
+  async lateSubmit(input: { assignmentId: string; employeeId: string; reason: string; otHours?: number; actualStart?: string; actualEnd?: string }): Promise<WorkSubmission> {
+    return (await api<{ submission: WorkSubmission }>('/api/v13/submissions', { method: 'POST', body: JSON.stringify({ action: 'late-submit', ...input }) })).submission;
+  },
   async correct(id: string, correction: { hours?: number; start?: string; end?: string; note: string }): Promise<WorkSubmission> {
     return (await api<{ submission: WorkSubmission }>('/api/v13/submissions', { method: 'PATCH', body: JSON.stringify({ id, ...correction }) })).submission;
   },
