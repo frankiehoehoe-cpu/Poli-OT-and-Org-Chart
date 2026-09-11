@@ -20,10 +20,10 @@ export function PublicShiftNotices() {
   }, []);
 
   const secondShifts = assignments.filter((assignment) => assignment.shiftType === 'SECOND_SHIFT' && assignment.status !== 'CLOSED');
-  const hourAssignments = assignments.filter((assignment) => assignment.shiftType !== 'SECOND_SHIFT');
+  const hourAssignments = assignments.filter((assignment) => assignment.shiftType !== 'SECOND_SHIFT' && assignment.date === publicDate);
 
   return <div className="space-y-4">
-    {secondShifts.length > 0 && <section className="mx-auto w-full max-w-6xl px-6"><div className="rounded-3xl border border-cyan-200 bg-cyan-50 p-5 shadow-sm"><p className="text-xs font-black uppercase tracking-widest text-cyan-800">2ND SHIFT / 中班安排</p>{secondShifts.map((assignment) => <article key={assignment.id} className="mt-3 rounded-2xl border border-cyan-200 bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="font-black text-slate-900">{assignment.department} · {assignment.workstation}</h3><p className="text-sm font-bold text-slate-600">{assignment.date} · {assignment.plannedStart}–{assignment.plannedEnd}</p>{assignment.targetRequirement && <p className="mt-1 text-sm text-slate-600">{assignment.targetRequirement}</p>}</div><span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-800">NO HOURS REQUIRED</span></div><p className="mt-3 text-sm"><strong>Assigned / 安排：</strong>{assignment.participants.map((participant) => participant.employeeName).join(', ')}</p></article>)}</div></section>}
+    {secondShifts.length > 0 && <section className="mx-auto w-full max-w-6xl px-6"><div className="rounded-3xl border border-cyan-200 bg-cyan-50 p-5 shadow-sm"><p className="text-xs font-black uppercase tracking-widest text-cyan-800">2ND SHIFT / 中班安排</p>{secondShifts.map((assignment) => { const upcoming = assignment.date > publicDate; return <article key={assignment.id} className="mt-3 rounded-2xl border border-cyan-200 bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-black uppercase tracking-widest text-cyan-700">{upcoming ? 'UPCOMING 2ND SHIFT / 即将中班' : "TODAY'S 2ND SHIFT / 今日中班"}</p><h3 className="mt-1 font-black text-slate-900">{assignment.department} · {assignment.workstation}</h3><p className="text-sm font-bold text-slate-600">{assignment.date} · {assignment.plannedStart}–{assignment.plannedEnd}</p>{assignment.targetRequirement && <p className="mt-1 text-sm text-slate-600">{assignment.targetRequirement}</p>}</div><span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-800">{upcoming ? 'UPCOMING / 即将' : 'TODAY / 今日'} · NO HOURS REQUIRED</span></div><p className="mt-3 text-sm"><strong>Assigned / 安排：</strong>{assignment.participants.map((participant) => participant.employeeName).join(', ')}</p></article>; })}</div></section>}
     <section className="mx-auto w-full max-w-6xl px-6">
       <div className="rounded-3xl border border-indigo-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -54,12 +54,16 @@ export function PublicShiftNotices() {
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {assignment.participants.map((participant) => {
                     const submitted = participant.status === 'SUBMITTED';
+                    const mismatch = participant.status === 'MISMATCH';
                     const pendingLabel = participant.employmentType === 'part-time' ? 'PENDING WORK HOURS / 待填写工时' : 'PENDING OT / 待填写';
                     const submittedLabel = participant.employmentType === 'part-time' ? 'SUBMITTED WORK HOURS ✓ / 已填写工时' : 'SUBMITTED ✓ / 已填写';
-                    return <div key={participant.employeeId} className={`rounded-xl border p-3 ${submitted ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                    const statusLabel = mismatch ? 'EMPLOYMENT TYPE MISMATCH / 雇佣类型不匹配' : submitted ? submittedLabel : pendingLabel;
+                    const stateClass = mismatch ? 'border-slate-300 bg-slate-50' : submitted ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50';
+                    const textClass = mismatch ? 'text-slate-600' : submitted ? 'text-emerald-700' : 'text-red-700';
+                    return <div key={participant.employeeId} className={`rounded-xl border p-3 ${stateClass}`}>
                       <div className="flex items-center justify-between gap-2">
                         <strong className="text-sm text-slate-900">{participant.employeeName}</strong>
-                        <span className={`text-[10px] font-black ${submitted ? 'text-emerald-700' : 'text-red-700'}`}>{submitted ? submittedLabel : pendingLabel}</span>
+                        <span className={`text-[10px] font-black ${textClass}`}>{statusLabel}</span>
                       </div>
                       {submitted && participant.effectiveHours !== undefined && <p className="mt-1 text-xs font-bold text-slate-600">Actual: {participant.effectiveHours.toFixed(1)}h</p>}
                     </div>;
