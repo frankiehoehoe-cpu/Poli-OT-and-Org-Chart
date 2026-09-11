@@ -126,6 +126,8 @@ function EmployeeSubmission({ assignment, employee, existing, saved, setError }:
   if (assignment.shiftType === 'SECOND_SHIFT') return <div className="mt-3 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-900"><strong>2ND SHIFT / 中班</strong><p>{assignment.date} · {assignment.plannedStart}–{assignment.plannedEnd} · {assignment.workstation}</p><p>{assignment.targetRequirement}</p><p className="mt-1 font-black">NO HOURS SUBMISSION REQUIRED / 无需填写工时</p></div>;
   if (existing) return <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">Submitted: {existing.employmentTypeSnapshot === 'part-time' ? `${existing.effectiveWorkedHours} worked hours` : `${existing.effectiveOtHours} OT hours`}{existing.lateEntry ? ' · Supervisor late entry / 主管补录' : ''}</p>;
   const employmentType = getEmploymentType(employee);
+  const eligibleForAssignment = isEmployeeEligibleForAssignment(employmentType, assignment.assignmentMode, assignment.assignmentMode === 'work-shift' ? assignment.shiftType : undefined);
+  if (!eligibleForAssignment) return <p className="mt-3 rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-700">Assignment no longer matches employment type / 此任务与当前雇佣类型不匹配</p>;
   const isTodayOpen = assignment.date === getSingaporeDate() && !['CLOSED', 'CANCELLED'].includes(assignment.status);
   const beforeOtOpen = !isFullTimeOtSubmissionOpen(employmentType, assignment, getSingaporeTime());
   const allowed = isTodayOpen && !beforeOtOpen;
