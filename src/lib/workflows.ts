@@ -70,6 +70,11 @@ export interface WorkSubmission {
   correctedAt?: string;
   correctedBy?: string;
   correctionHistory?: CorrectionHistoryItem[];
+  lateEntry?: boolean;
+  enteredByRole?: 'supervisor';
+  enteredBy?: string;
+  lateEntryReason?: string;
+  lateEnteredAt?: string;
 }
 
 export interface ShiftNotice {
