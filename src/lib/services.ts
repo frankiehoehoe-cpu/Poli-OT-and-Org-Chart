@@ -67,17 +67,12 @@ export const employeeService = {
 
   async getAllEmployees(): Promise<UserProfile[]> {
     try {
-      if (employeeCache && Date.now() - employeeCacheTime < CACHE_DURATION) {
-        return [...employeeCache];
-      }
-
       const response = await fetch('/api/employees', { headers: { accept: 'application/json' }, cache: 'no-store' });
       if (!response.ok) throw new Error(`Employee service unavailable (${response.status})`);
       const result = await response.json() as { employees: UserProfile[] };
       employeeCache = result.employees;
       employeeCacheTime = Date.now();
-      
-      return [...employeeCache];
+      return [...result.employees];
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'employees');
       return [];
