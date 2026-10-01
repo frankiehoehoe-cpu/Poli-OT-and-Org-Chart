@@ -129,8 +129,8 @@ export interface PartTimeMonthlyForecast {
   isFinal: boolean;
 }
 
-export const getEmploymentType = (employee: { employmentType?: EmploymentType }): EmploymentType =>
-  employee.employmentType ?? 'full-time';
+export const getEmploymentType = (employee: { employmentType?: EmploymentType | string }): EmploymentType =>
+  employee.employmentType === 'part-time' ? 'part-time' : 'full-time';
 
 export const getEffectiveShiftType = (
   assignment: Pick<WorkAssignment, 'assignmentMode' | 'shiftType'>,
