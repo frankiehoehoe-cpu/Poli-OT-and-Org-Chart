@@ -9,7 +9,7 @@ export interface UserProfile {
   name: string;
   role: Role;
   department?: string;
-  password?: string; // Required for employees, supervisor/manager have fixed ones
+  employmentType?: 'full-time' | 'part-time';
 }
 
 export interface RosterAssignment {

@@ -39,6 +39,8 @@ import RosterBoard from './RosterBoard';
 import OrgChart from './components/OrgChart';
 import ManagerControlDashboard from './components/ManagerControlDashboard';
 import { getSingaporeMonth } from './lib/overtimeRisk';
+import { MixedMonthAnalytics } from './components/workflow/TaskWorkflow';
+import { OT_V13_ENABLED } from './lib/v13Flags';
 
 export default function ManagerPortal() {
   const { logout, user } = useAuth();
@@ -54,6 +56,7 @@ export default function ManagerPortal() {
   const [newName, setNewName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newDepartment, setNewDepartment] = useState('deptProduction');
+  const [newEmploymentType, setNewEmploymentType] = useState<'full-time' | 'part-time'>('full-time');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [deletingEmployeeId, setDeletingEmployeeId] = useState<string | null>(null);
@@ -396,17 +399,18 @@ export default function ManagerPortal() {
 
   const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName || !newPassword) return;
+    if (!newName || (!editingEmployeeId && !newPassword)) return;
     
     setIsSubmitting(true);
     if (editingEmployeeId) {
-      await employeeService.updateEmployee(editingEmployeeId, newName, newPassword, newDepartment);
+      await employeeService.updateEmployee(editingEmployeeId, newName, newPassword, newDepartment, OT_V13_ENABLED ? newEmploymentType : undefined);
     } else {
-      await employeeService.createEmployee(newName, newPassword, newDepartment);
+      await employeeService.createEmployee(newName, newPassword, newDepartment, OT_V13_ENABLED ? newEmploymentType : undefined);
     }
     setNewName('');
     setNewPassword('');
     setNewDepartment('deptProduction');
+    setNewEmploymentType('full-time');
     setEditingEmployeeId(null);
     await fetchData();
     setIsSubmitting(false);
@@ -415,8 +419,9 @@ export default function ManagerPortal() {
 
   const handleEditClick = (emp: UserProfile) => {
     setNewName(emp.name);
-    setNewPassword(emp.password || '');
+    setNewPassword('');
     setNewDepartment(emp.department || 'deptOther');
+    setNewEmploymentType(emp.employmentType ?? 'full-time');
     setEditingEmployeeId(emp.id);
   };
 
@@ -528,6 +533,7 @@ export default function ManagerPortal() {
 
       {/* Main Content */}
       <main className="flex-1 p-6 lg:p-10 overflow-y-auto max-h-screen">
+        {OT_V13_ENABLED && (activeTab === 'dashboard' || activeTab === 'report') && <div className="mb-6"><MixedMonthAnalytics month={selectedMonth} /></div>}
         <header className="mb-10 flex items-center justify-between no-print">
           <div>
             <h2 className="text-3xl font-black text-slate-900">
@@ -592,7 +598,7 @@ export default function ManagerPortal() {
                       value={newPassword}
                       onChange={e => setNewPassword(e.target.value)}
                       className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500/10 bg-slate-50 font-medium"
-                      placeholder="Enter a simple password"
+                      placeholder={editingEmployeeId ? 'Leave blank to keep current password' : 'Enter a new password'}
                     />
                   </div>
                   <div>
@@ -610,6 +616,12 @@ export default function ManagerPortal() {
                       <option value="deptOther">{t('deptOther')}</option>
                     </select>
                   </div>
+                  {OT_V13_ENABLED && <div>
+                    <p className="block text-sm font-bold text-slate-800 mb-2">Employment Type / 雇佣类型</p>
+                    <select value={newEmploymentType} onChange={(event) => setNewEmploymentType(event.target.value as 'full-time' | 'part-time')} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 font-bold">
+                      <option value="full-time">Full-Time / 全职</option><option value="part-time">Part-Time / 兼职</option>
+                    </select>
+                  </div>}
                   <div className="flex gap-3">
                     {editingEmployeeId && (
                       <button 
@@ -648,7 +660,7 @@ export default function ManagerPortal() {
                       <h4 className="font-bold text-slate-800" translate="no">{emp.name}</h4>
                       <div className="flex items-center gap-2 text-xs text-slate-700 font-medium mt-1">
                         <Lock className="w-3 h-3" />
-                        <span>{emp.password}</span>
+                        <span>Password protected</span>
                         <span className="mx-2">|</span>
                         <span>{t(emp.department || 'deptOther')}</span>
                       </div>

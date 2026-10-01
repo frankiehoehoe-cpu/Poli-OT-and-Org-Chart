@@ -2,8 +2,11 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext';
 import { useTranslation } from './lib/LanguageContext';
-import { overtimeService, reportService } from './lib/services';
-import { OvertimeEntry } from './types';
+import { employeeService, overtimeService, reportService } from './lib/services';
+import { OvertimeEntry, UserProfile } from './types';
+import { TaskWorkflow } from './components/workflow/TaskWorkflow';
+import { ShiftNoticeControl } from './components/workflow/ShiftPlanning';
+import { OT_V13_ENABLED } from './lib/v13Flags';
 import { motion, AnimatePresence } from 'motion/react';
 import SignatureCanvas from 'react-signature-canvas';
 import { formatDate, formatTime, formatDateWithDay } from './lib/dateUtils';
@@ -41,6 +44,7 @@ export default function SupervisorPortal() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [entries, setEntries] = useState<OvertimeEntry[]>([]);
+  const [employees, setEmployees] = useState<UserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
@@ -57,6 +61,10 @@ export default function SupervisorPortal() {
   useEffect(() => {
     fetchEntries();
   }, [selectedMonth]);
+
+  useEffect(() => {
+    if (OT_V13_ENABLED) void employeeService.getAllEmployees().then(setEmployees);
+  }, []);
 
   useEffect(() => {
     fetchEmployeeReport();
@@ -197,6 +205,7 @@ export default function SupervisorPortal() {
       </header>
 
       <main className="max-w-5xl mx-auto p-6 space-y-6">
+        {OT_V13_ENABLED && <><TaskWorkflow role="supervisor" employees={employees} /><ShiftNoticeControl employees={employees} /></>}
         <AnimatePresence mode="wait">
           {!selectedEmployeeId ? (
             <motion.div 

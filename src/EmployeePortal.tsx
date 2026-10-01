@@ -4,6 +4,8 @@ import { useAuth } from './lib/AuthContext';
 import { useTranslation } from './lib/LanguageContext';
 import { employeeService, overtimeService, planService } from './lib/services';
 import { UserProfile, OvertimeEntry, OvertimePlan } from './types';
+import { TaskWorkflow, WorkHistory } from './components/workflow/TaskWorkflow';
+import { OT_V13_ENABLED } from './lib/v13Flags';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDate, formatTime, parseDate, formatDateFriendly, formatDateWithDay } from './lib/dateUtils';
 import { 
@@ -27,13 +29,14 @@ import {
 } from 'lucide-react';
 
 export default function EmployeePortal({ initialEmployee, onBack }: { initialEmployee?: UserProfile | null, onBack?: () => void }) {
-  const { logout, role } = useAuth();
+  const { login, logout, role, user } = useAuth();
   const navigate = useNavigate();
   const { t, language } = useTranslation();
   const [employees, setEmployees] = useState<UserProfile[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState<UserProfile | null>(initialEmployee || null);
+  const authenticatedEmployee = role === 'employee' ? user : null;
+  const [selectedEmployee, setSelectedEmployee] = useState<UserProfile | null>(initialEmployee || authenticatedEmployee);
   const [passwordInput, setPasswordInput] = useState('');
-  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(Boolean(authenticatedEmployee));
   const [entries, setEntries] = useState<OvertimeEntry[]>([]);
   const [plans, setPlans] = useState<OvertimePlan[]>([]);
   const [error, setError] = useState('');
@@ -116,9 +119,12 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
     setError('');
   };
 
-  const handleUnlock = (e: React.FormEvent) => {
+  const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedEmployee?.password === passwordInput) {
+    if (!selectedEmployee) return;
+    const result = await employeeService.verifyEmployee(selectedEmployee.id, passwordInput);
+    setPasswordInput('');
+    if (result.verified && await login()) {
       setIsUnlocked(true);
       fetchEntries(selectedEmployee.id);
       fetchPlans(selectedEmployee.id);
@@ -136,6 +142,14 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
       setIsUnlocked(false);
       setPasswordInput('');
     }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setSelectedEmployee(null);
+    setIsUnlocked(false);
+    if (onBack) onBack();
+    else navigate('/');
   };
 
   const fetchEntries = async (employeeId: string) => {
@@ -426,7 +440,7 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
               <Home className="w-5 h-5" />
             </button>
             <button 
-              onClick={logout}
+              onClick={() => void handleLogout()}
               className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors"
             >
               <LogOut className="w-5 h-5" />
@@ -513,6 +527,10 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
               animate={{ opacity: 1 }}
               className="space-y-6"
             >
+              {OT_V13_ENABLED && <>
+                <TaskWorkflow role="employee" employees={employees} employeeId={selectedEmployee.id} />
+                <WorkHistory employeeId={selectedEmployee.id} month={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit' }).slice(0, 7)} />
+              </>}
               <div className="flex items-center justify-between no-print">
                 <div className="flex items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 flex-1">
                   <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">

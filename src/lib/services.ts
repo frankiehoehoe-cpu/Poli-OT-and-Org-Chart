@@ -7,7 +7,6 @@ import {
   where, 
   getDocs, 
   serverTimestamp, 
-  orderBy, 
   updateDoc, 
   doc, 
   getDoc,
@@ -17,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { UserProfile, OvertimeEntry, OvertimePlan, OrgNode, OrgChartSettings } from '../types';
+import { getAuthenticatedRole } from './authState';
 
 function getDateDaysAgo(days: number): string {
   const d = new Date();
@@ -25,7 +25,7 @@ function getDateDaysAgo(days: number): string {
 }
 
 function getAllowedStartDate(requestedStartDate: string): string {
-  const role = sessionStorage.getItem('userRole');
+  const role = getAuthenticatedRole();
   if (role === 'manager') {
     // Managers can see all data (经理可以浏览所有数据)
     return requestedStartDate;
@@ -47,18 +47,18 @@ let employeeCacheTime = 0;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 export const employeeService = {
-  async createEmployee(name: string, password: string, department: string = 'deptOther'): Promise<string> {
+  async createEmployee(name: string, password: string, department: string = 'deptOther', employmentType?: 'full-time' | 'part-time'): Promise<string> {
     try {
-      const docRef = await addDoc(collection(db, 'employees'), {
-        name,
-        password,
-        department,
-        role: 'employee',
-        createdAt: serverTimestamp()
+      const response = await fetch('/api/v13/employees', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ name, password, department, ...(employmentType ? { employmentType } : {}) })
       });
-      // Invalidate cache
+      if (!response.ok) throw new Error(`Employee create failed (${response.status})`);
+      const result = await response.json() as { employee: UserProfile };
       employeeCache = null;
-      return docRef.id;
+      return result.employee.id;
     } catch (e) {
       handleFirestoreError(e, OperationType.CREATE, 'employees');
       return '';
@@ -71,12 +71,10 @@ export const employeeService = {
         return [...employeeCache];
       }
 
-      const q = query(collection(db, 'employees'), orderBy('name'), limit(500));
-      const snapshot = await getDocs(q);
-      employeeCache = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as UserProfile[];
+      const response = await fetch('/api/employees', { headers: { accept: 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error(`Employee service unavailable (${response.status})`);
+      const result = await response.json() as { employees: UserProfile[] };
+      employeeCache = result.employees;
       employeeCacheTime = Date.now();
       
       return [...employeeCache];
@@ -88,27 +86,22 @@ export const employeeService = {
 
   async getEmployeeById(id: string): Promise<UserProfile | null> {
     try {
-      const docRef = doc(db, 'employees', id);
-      const snapshot = await getDoc(docRef);
-      if (snapshot.exists()) {
-        return { id: snapshot.id, ...snapshot.data() } as UserProfile;
-      }
-      return null;
+      return (await this.getAllEmployees()).find(employee => employee.id === id) || null;
     } catch (e) {
       handleFirestoreError(e, OperationType.GET, `employees/${id}`);
       return null;
     }
   },
 
-  async updateEmployee(id: string, name: string, password: string, department: string): Promise<void> {
+  async updateEmployee(id: string, name: string, password: string | undefined, department: string, employmentType?: 'full-time' | 'part-time'): Promise<void> {
     try {
-      const docRef = doc(db, 'employees', id);
-      await updateDoc(docRef, {
-        name,
-        password,
-        department,
-        updatedAt: serverTimestamp()
+      const response = await fetch('/api/v13/employees', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ id, name, password, department, ...(employmentType ? { employmentType } : {}) })
       });
+      if (!response.ok) throw new Error(`Employee update failed (${response.status})`);
       employeeCache = null;
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `employees/${id}`);
@@ -117,11 +110,13 @@ export const employeeService = {
 
   async updateEmployeeDepartment(id: string, department: string): Promise<void> {
     try {
-      const docRef = doc(db, 'employees', id);
-      await updateDoc(docRef, {
-        department,
-        updatedAt: serverTimestamp()
+      const response = await fetch('/api/v13/employees', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ id, department })
       });
+      if (!response.ok) throw new Error(`Employee department update failed (${response.status})`);
       employeeCache = null;
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `employees/${id}`);
@@ -130,11 +125,31 @@ export const employeeService = {
 
   async deleteEmployee(id: string): Promise<void> {
     try {
-      const docRef = doc(db, 'employees', id);
-      await deleteDoc(docRef);
+      const response = await fetch('/api/v13/employees', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ id })
+      });
+      if (!response.ok) throw new Error(`Employee delete failed (${response.status})`);
       employeeCache = null;
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `employees/${id}`);
+    }
+  },
+
+  async verifyEmployee(employeeId: string, password: string): Promise<{ verified: boolean; employee?: UserProfile }> {
+    try {
+      const response = await fetch('/api/employee/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ employeeId, password })
+      });
+      if (!response.ok) return { verified: false };
+      return await response.json() as { verified: boolean; employee?: UserProfile };
+    } catch {
+      return { verified: false };
     }
   }
 };
@@ -169,7 +184,7 @@ export const overtimeService = {
 
   async getEmployeeEntries(employeeId: string, month?: string): Promise<OvertimeEntry[]> {
     try {
-      const cacheKey = `${employeeId}-${month || 'default'}-${sessionStorage.getItem('userRole') || 'default'}`;
+      const cacheKey = `${employeeId}-${month || 'default'}-${getAuthenticatedRole() || 'default'}`;
       if (getEmployeeEntriesCache[cacheKey] && Date.now() - getEmployeeEntriesCache[cacheKey].time < ENTRIES_CACHE_DURATION) {
         return [...getEmployeeEntriesCache[cacheKey].data];
       }
@@ -208,7 +223,7 @@ export const overtimeService = {
 
   async getAllEntries(month?: string): Promise<OvertimeEntry[]> {
     try {
-      const cacheKey = `${month || 'default'}-${sessionStorage.getItem('userRole') || 'default'}`;
+      const cacheKey = `${month || 'default'}-${getAuthenticatedRole() || 'default'}`;
       if (getAllEntriesCache[cacheKey] && Date.now() - getAllEntriesCache[cacheKey].time < ENTRIES_CACHE_DURATION) {
         return [...getAllEntriesCache[cacheKey].data];
       }
@@ -342,7 +357,7 @@ export const planService = {
 
   async getAllPlansForMonth(month: string): Promise<OvertimePlan[]> {
     try {
-      const cacheKey = `${month}-${sessionStorage.getItem('userRole') || 'default'}`;
+      const cacheKey = `${month}-${getAuthenticatedRole() || 'default'}`;
       if (planCache[cacheKey] && Date.now() - planCache[cacheKey].time < PLAN_CACHE_DURATION) {
         return [...planCache[cacheKey].data];
       }

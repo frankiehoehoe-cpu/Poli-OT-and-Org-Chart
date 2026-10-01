@@ -1,11 +1,18 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Role, UserProfile } from '../types';
+import { setAuthenticatedRole } from './authState';
+
+interface SessionIdentity {
+  role: Role;
+  employeeId?: string;
+  employeeName?: string;
+}
 
 interface AuthContextType {
   role: Role | null;
   user: UserProfile | null;
-  login: (role: Role, user?: UserProfile) => void;
-  logout: () => void;
+  login: () => Promise<boolean>;
+  logout: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -16,32 +23,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const savedRole = sessionStorage.getItem('userRole') as Role;
-    const savedUser = sessionStorage.getItem('userData');
-    
-    if (savedRole) {
-      setRole(savedRole);
-      if (savedUser) setUser(JSON.parse(savedUser));
-    }
-    setIsLoading(false);
+  const applyIdentity = useCallback((identity: SessionIdentity | null) => {
+    const nextRole = identity?.role || null;
+    setRole(nextRole);
+    setAuthenticatedRole(nextRole);
+    setUser(identity?.role === 'employee' && identity.employeeId && identity.employeeName ? {
+      id: identity.employeeId,
+      name: identity.employeeName,
+      role: 'employee'
+    } : null);
   }, []);
 
-  const login = (role: Role, user?: UserProfile) => {
-    setRole(role);
-    if (user) setUser(user);
-    sessionStorage.setItem('userRole', role);
-    if (user) sessionStorage.setItem('userData', JSON.stringify(user));
-  };
+  const loadSession = useCallback(async () => {
+    try {
+      const response = await fetch('/api/auth/session', {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        applyIdentity(null);
+        return false;
+      }
+      const result = await response.json() as { authenticated: boolean } & Partial<SessionIdentity>;
+      if (!result.authenticated || !result.role) {
+        applyIdentity(null);
+        return false;
+      }
+      applyIdentity(result as SessionIdentity);
+      return true;
+    } catch {
+      applyIdentity(null);
+      return false;
+    }
+  }, [applyIdentity]);
 
-  const logout = () => {
-    setRole(null);
-    setUser(null);
-    sessionStorage.clear();
+  useEffect(() => {
+    sessionStorage.removeItem('userRole');
+    sessionStorage.removeItem('userData');
+    void loadSession().finally(() => setIsLoading(false));
+  }, [loadSession]);
+
+  const logout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { accept: 'application/json' },
+        credentials: 'same-origin'
+      });
+    } finally {
+      sessionStorage.removeItem('userRole');
+      sessionStorage.removeItem('userData');
+      applyIdentity(null);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ role, user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ role, user, login: loadSession, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
