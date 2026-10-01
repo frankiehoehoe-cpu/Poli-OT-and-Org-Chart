@@ -132,13 +132,27 @@ export async function requireRole(request: Request, ...roles: SessionRole[]): Pr
 export function isSameOrigin(request: Request): boolean {
   const origin = request.headers.origin;
   if (!origin) return true;
+
   const forwardedHost = request.headers['x-forwarded-host'];
   const forwardedProto = request.headers['x-forwarded-proto'];
-  const host = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost || request.headers.host;
+  const rawHost = request.headers.host;
+  const forwarded = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost;
   const protocol = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto || 'https';
-  if (!host) return false;
+
   try {
-    return new URL(origin).origin === `${protocol}://${host}`;
+    const requestOrigin = new URL(origin).origin;
+    const allowedOrigins = new Set<string>();
+
+    if (rawHost) allowedOrigins.add(`${protocol}://${rawHost}`);
+    if (forwarded) allowedOrigins.add(`${protocol}://${forwarded}`);
+
+    const appUrl = process.env.APP_URL;
+    if (appUrl) allowedOrigins.add(new URL(appUrl).origin);
+
+    const vercelUrl = process.env.VERCEL_URL;
+    if (vercelUrl) allowedOrigins.add(`https://${vercelUrl}`);
+
+    return allowedOrigins.has(requestOrigin);
   } catch {
     return false;
   }
