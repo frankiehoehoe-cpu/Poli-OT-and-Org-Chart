@@ -2,6 +2,7 @@ export interface V13Collections {
   assignments: 'workAssignments' | 'otv13_test_workAssignments';
   submissions: 'workSubmissions' | 'otv13_test_workSubmissions';
   shiftNotices: 'shiftNotices' | 'otv13_test_shiftNotices';
+  partTimeAvailability: 'partTimeAvailability' | 'otv13_test_partTimeAvailability';
   employeeOverrides: 'otv13_test_employeeOverrides';
 }
 
@@ -15,12 +16,14 @@ export function getV13Collections(environment: NodeJS.ProcessEnv = process.env):
         assignments: 'otv13_test_workAssignments',
         submissions: 'otv13_test_workSubmissions',
         shiftNotices: 'otv13_test_shiftNotices',
+        partTimeAvailability: 'otv13_test_partTimeAvailability',
         employeeOverrides: 'otv13_test_employeeOverrides'
       }
     : {
         assignments: 'workAssignments',
         submissions: 'workSubmissions',
         shiftNotices: 'shiftNotices',
+        partTimeAvailability: 'partTimeAvailability',
         employeeOverrides: 'otv13_test_employeeOverrides'
       };
 }
