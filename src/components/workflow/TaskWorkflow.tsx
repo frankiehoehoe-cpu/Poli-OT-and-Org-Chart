@@ -5,6 +5,10 @@ import { workflowService } from '../../lib/workflowService';
 
 const workstations = ['Mixing / 搅拌', 'Oven Drying / 烘干', 'Grinding / 研磨', 'Encapsulation / 进胶囊', 'Polishing / 抛光', 'Blistering / 压板', 'Print Code / 打码', 'Sacheting / 茶袋包装', 'Packing / 包装', 'Cleaning / 清洁', 'Changeover / 转线', 'Other Production Work / 其他生产工作'];
 
+const notifyWorkflowChanged = () => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('otpro-workflow-changed'));
+};
+
 export function TaskWorkflow({ role, employees, employeeId }: { role: Role; employees: UserProfile[]; employeeId?: string }) {
   const [assignments, setAssignments] = useState<WorkAssignment[]>([]);
   const [submissions, setSubmissions] = useState<WorkSubmission[]>([]);
@@ -49,6 +53,7 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
       const details = value.includes('close') ? { actualResult: 'Completed', completionStatus: 'COMPLETED' } : {};
       await workflowService.assignmentAction(assignment, value, details);
       await load();
+      notifyWorkflowChanged();
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Action failed'); }
   };
 
@@ -106,7 +111,7 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
       {role === 'supervisor' && <button className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white" onClick={() => setEditing(null)}>Create Assignment</button>}
     </div>
     {error && <p className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
-    {editing !== undefined && <AssignmentEditor employees={employees} availability={availability} assignment={editing} close={() => setEditing(undefined)} saved={async () => { setEditing(undefined); await load(); }} />}
+    {editing !== undefined && <AssignmentEditor employees={employees} availability={availability} assignment={editing} close={() => setEditing(undefined)} saved={async () => { setEditing(undefined); await load(); notifyWorkflowChanged(); }} />}
 
     <div className="space-y-3">
       {(role === 'supervisor' ? supervisorActive : visible).map(renderAssignment)}

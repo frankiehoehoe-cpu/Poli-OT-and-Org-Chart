@@ -5,8 +5,8 @@ import { useTranslation } from './lib/LanguageContext';
 import { employeeService, overtimeService, planService } from './lib/services';
 import { UserProfile, OvertimeEntry, OvertimePlan } from './types';
 import { TaskWorkflow, WorkHistory } from './components/workflow/TaskWorkflow';
-import { workflowService } from './lib/workflowService';
-import { getEmploymentType, getSingaporeDate, type PartTimeAvailability } from './lib/workflows';
+import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
+import { getEmploymentType, getSingaporeDate } from './lib/workflows';
 import { OT_V13_ENABLED } from './lib/v13Flags';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDate, formatTime, parseDate, formatDateFriendly, formatDateWithDay } from './lib/dateUtils';
@@ -48,18 +48,12 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
   const [isPlanning, setIsPlanning] = useState(false);
   const [feedback, setFeedback] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   const [planFeedback, setPlanFeedback] = useState<{message: string, type: 'success' | 'error'} | null>(null);
-  const [availability, setAvailability] = useState<PartTimeAvailability[]>([]);
-  const [availabilityDate, setAvailabilityDate] = useState(getSingaporeDate());
-  const [availabilityFeedback, setAvailabilityFeedback] = useState('');
 
   const effectiveSelectedEmployee = selectedEmployee
     ? employees.find((employee) => employee.id === selectedEmployee.id) || selectedEmployee
     : null;
   const isPartTimeEmployee = Boolean(effectiveSelectedEmployee && getEmploymentType(effectiveSelectedEmployee) === 'part-time');
-  const singaporeToday = getSingaporeDate();
-  const singaporeMonth = singaporeToday.slice(0, 7);
-  const [availabilityYear, availabilityMonthNumber] = singaporeMonth.split('-').map(Number);
-  const availabilityMonthEnd = `${singaporeMonth}-${String(new Date(availabilityYear, availabilityMonthNumber, 0).getDate()).padStart(2, '0')}`;
+  const singaporeMonth = getSingaporeDate().slice(0, 7);
 
   // Form State
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -175,44 +169,6 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
     // We'll need to add getEmployeePlans to planService or just filter getAllPlans
     const allPlans = await planService.getAllPlansForMonth(new Date().toISOString().slice(0, 7));
     setPlans(allPlans.filter(p => p.employeeId === employeeId));
-  };
-
-  const fetchAvailability = async () => {
-    if (!OT_V13_ENABLED || !isPartTimeEmployee) {
-      setAvailability([]);
-      return;
-    }
-    try {
-      setAvailability(await workflowService.availability(singaporeMonth));
-      setAvailabilityFeedback('');
-    } catch (reason) {
-      setAvailabilityFeedback(reason instanceof Error ? reason.message : 'Unable to load availability');
-    }
-  };
-
-  useEffect(() => {
-    if (isUnlocked && selectedEmployee && isPartTimeEmployee) void fetchAvailability();
-  }, [isUnlocked, selectedEmployee?.id, isPartTimeEmployee, singaporeMonth]);
-
-  const handleAddAvailability = async () => {
-    if (!availabilityDate) return;
-    try {
-      await workflowService.addAvailability(availabilityDate);
-      await fetchAvailability();
-      setAvailabilityFeedback('Available day saved / 可上班日期已保存');
-    } catch (reason) {
-      setAvailabilityFeedback(reason instanceof Error ? reason.message : 'Unable to save availability');
-    }
-  };
-
-  const handleRemoveAvailability = async (day: string) => {
-    try {
-      await workflowService.removeAvailability(day);
-      await fetchAvailability();
-      setAvailabilityFeedback('Available day removed / 已移除可上班日期');
-    } catch (reason) {
-      setAvailabilityFeedback(reason instanceof Error ? reason.message : 'Unable to remove availability');
-    }
   };
 
   const handleAddEntry = async (e: React.FormEvent) => {
@@ -583,35 +539,12 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
                 <TaskWorkflow role="employee" employees={employees} employeeId={selectedEmployee.id} />
                 <WorkHistory employeeId={selectedEmployee.id} month={singaporeMonth} />
                 {isPartTimeEmployee && (
-                  <section className="rounded-3xl border border-slate-200 bg-white p-6 no-print">
-                    <div className="mb-4">
-                      <p className="text-xs font-black uppercase tracking-widest text-indigo-600">PART-TIME AVAILABILITY / 兼职可上班日期</p>
-                      <h3 className="text-lg font-black text-slate-900">Plan Available Work Days / 计划本月可上班日期</h3>
-                      <p className="mt-1 text-sm text-slate-600">Mark the days you are available this month. This does not create working hours. Supervisor must still create a Part-Time Shift / 选择本月可以上班的日期；这里只是提供可上班日期，仍需主管创建兼职班次后才可记录工时。</p>
-                    </div>
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <input
-                        type="date"
-                        min={singaporeToday}
-                        max={availabilityMonthEnd}
-                        value={availabilityDate}
-                        onChange={(event) => setAvailabilityDate(event.target.value)}
-                        className="min-h-12 flex-1 rounded-xl border border-slate-200 px-4 font-bold"
-                      />
-                      <button type="button" onClick={() => void handleAddAvailability()} className="min-h-12 rounded-xl bg-indigo-600 px-5 font-black text-white">
-                        Add Available Day / 添加
-                      </button>
-                    </div>
-                    {availabilityFeedback && <p className="mt-3 text-sm font-bold text-slate-600">{availabilityFeedback}</p>}
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {availability.length ? availability.sort((a, b) => a.date.localeCompare(b.date)).map((item) => (
-                        <div key={item.id} className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
-                          <span>{formatDateWithDay(item.date)}</span>
-                          {item.date >= singaporeToday && <button type="button" onClick={() => void handleRemoveAvailability(item.date)} className="rounded-lg px-2 py-1 text-red-600 hover:bg-red-50">×</button>}
-                        </div>
-                      )) : <p className="text-sm font-bold text-slate-500">No available days marked yet / 尚未填写可上班日期</p>}
-                    </div>
-                  </section>
+                  <PartTimeAvailabilityCalendar
+                    mode="employee"
+                    employees={employees}
+                    month={singaporeMonth}
+                    employeeId={selectedEmployee.id}
+                  />
                 )}
               </>}
               <div className="flex items-center justify-between no-print">
