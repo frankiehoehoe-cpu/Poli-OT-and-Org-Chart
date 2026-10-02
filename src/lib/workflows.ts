@@ -100,6 +100,15 @@ export interface ShiftNotice {
   endedBy?: string;
 }
 
+export interface PartTimeAvailability {
+  id: string;
+  employeeId: string;
+  employeeNameSnapshot: string;
+  date: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LegacyOtRecord {
   id: string;
   employeeId: string;
