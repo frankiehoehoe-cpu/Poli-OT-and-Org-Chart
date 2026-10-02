@@ -275,7 +275,8 @@ export function applyEffectiveCorrection(
 export function aggregateMixedMonth(
   month: string,
   legacy: LegacyOtRecord[],
-  submissions: WorkSubmission[]
+  submissions: WorkSubmission[],
+  assignments: WorkAssignment[]
 ): EmployeeMonthAggregate[] {
   const values = new Map<string, EmployeeMonthAggregate>();
   const ensure = (id: string, name: string) => {
@@ -286,13 +287,15 @@ export function aggregateMixedMonth(
     return created;
   };
   const authoritativeV13OtDays = new Set(
-    submissions
-      .filter((submission) =>
-        submission.taskDate.startsWith(month) &&
-        submission.shiftTypeSnapshot !== 'SECOND_SHIFT' &&
-        submission.employmentTypeSnapshot === 'full-time'
+    assignments
+      .filter((assignment) =>
+        assignment.date.startsWith(month) &&
+        assignment.assignmentMode === 'ot-task' &&
+        assignment.status !== 'CANCELLED'
       )
-      .map((submission) => `${submission.employeeId}:${submission.taskDate}`)
+      .flatMap((assignment) =>
+        assignment.assignedEmployeeIds.map((employeeId) => `${employeeId}:${assignment.date}`)
+      )
   );
 
   legacy.filter((entry) =>
