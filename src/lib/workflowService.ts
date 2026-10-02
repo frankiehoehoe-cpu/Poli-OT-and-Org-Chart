@@ -1,4 +1,4 @@
-import type { EmployeeMonthAggregate, PartTimeMonthlyForecast, ShiftNotice, ShiftType, WorkAssignment, WorkSubmission } from './workflows';
+import type { EmployeeMonthAggregate, PartTimeAvailability, PartTimeMonthlyForecast, ShiftNotice, ShiftType, WorkAssignment, WorkSubmission } from './workflows';
 
 export interface PublicAssignmentParticipant {
   employeeId: string;
@@ -67,6 +67,15 @@ export const workflowService = {
   },
   async correct(id: string, correction: { hours?: number; start?: string; end?: string; note: string }): Promise<WorkSubmission> {
     return (await api<{ submission: WorkSubmission }>('/api/v13/submissions', { method: 'PATCH', body: JSON.stringify({ id, ...correction }) })).submission;
+  },
+  async availability(month: string): Promise<PartTimeAvailability[]> {
+    return (await api<{ availability: PartTimeAvailability[] }>(`/api/v13/assignments?resource=availability&month=${encodeURIComponent(month)}`)).availability;
+  },
+  async addAvailability(date: string): Promise<PartTimeAvailability> {
+    return (await api<{ availability: PartTimeAvailability }>('/api/v13/assignments', { method: 'POST', body: JSON.stringify({ action: 'availability-add', date }) })).availability;
+  },
+  async removeAvailability(date: string): Promise<void> {
+    await api<{ deleted: boolean }>('/api/v13/assignments', { method: 'DELETE', body: JSON.stringify({ action: 'availability-remove', date }) });
   },
   async notices(): Promise<ShiftNotice[]> {
     return (await api<{ notices: ShiftNotice[] }>('/api/v13/shift-notices')).notices;
