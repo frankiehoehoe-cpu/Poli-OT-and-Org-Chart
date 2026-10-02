@@ -23,7 +23,7 @@ export default async function handler(request: Request, response: Response) {
     const legacy = legacyDocuments.map((document) => ({ ...document.data, id: document.id }));
     const submissions = submissionDocuments.map((document) => ({ ...document.data, id: document.id }));
     const assignments = assignmentDocuments.map((document) => ({ ...document.data, id: document.id }));
-    const aggregates = aggregateMixedMonth(month, legacy, submissions);
+    const aggregates = aggregateMixedMonth(month, legacy, submissions, assignments);
     const filtered = session.role === 'employee' ? aggregates.filter((aggregate) => aggregate.employeeId === session.employeeId) : aggregates;
     const partTimeEmployees = employees.filter((employee) => getEmploymentType(employee) === 'part-time');
     const visiblePartTimeEmployees = session.role === 'employee'
