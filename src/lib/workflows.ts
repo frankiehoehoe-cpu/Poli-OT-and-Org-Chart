@@ -276,7 +276,21 @@ export function aggregateMixedMonth(
     values.set(id, created);
     return created;
   };
-  legacy.filter((entry) => entry.date.startsWith(month) && entry.multiplier !== 2).forEach((entry) => {
+  const authoritativeV13OtDays = new Set(
+    submissions
+      .filter((submission) =>
+        submission.taskDate.startsWith(month) &&
+        submission.shiftTypeSnapshot !== 'SECOND_SHIFT' &&
+        submission.employmentTypeSnapshot === 'full-time'
+      )
+      .map((submission) => `${submission.employeeId}:${submission.taskDate}`)
+  );
+
+  legacy.filter((entry) =>
+    entry.date.startsWith(month) &&
+    entry.multiplier !== 2 &&
+    !authoritativeV13OtDays.has(`${entry.employeeId}:${entry.date}`)
+  ).forEach((entry) => {
     const aggregate = ensure(entry.employeeId, entry.employeeName);
     aggregate.legacyOtHours += entry.totalHours;
     aggregate.fullTimeOtHours += entry.totalHours;
