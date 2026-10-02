@@ -112,11 +112,25 @@ export default async function handler(request: Request, response: Response) {
       const effectiveAssignment = shiftType ? { ...assignment, shiftType } : assignment;
       const id = deterministicSubmissionId(assignmentId, session.employeeId);
       const existing = await getServerDocument<WorkSubmission>(collections.submissions, id);
-      if (!canEmployeeSubmit({ employeeId: session.employeeId, employmentType, assignment: effectiveAssignment, singaporeDate: getSingaporeDate(), submissionExists: Boolean(existing) })) {
+      const singaporeDate = getSingaporeDate();
+      const singaporeTime = getSingaporeTime();
+      if (!canEmployeeSubmit({
+        employeeId: session.employeeId,
+        employmentType,
+        assignment: effectiveAssignment,
+        singaporeDate,
+        singaporeTime,
+        submissionExists: Boolean(existing)
+      })) {
+        if (employmentType === 'full-time' && effectiveAssignment.assignmentMode === 'ot-task') {
+          if (effectiveAssignment.date !== singaporeDate) {
+            throw conflict('OT submission is only allowed on the assigned Singapore date. Missed submissions require Supervisor late entry');
+          }
+          if (!isFullTimeOtSubmissionOpen(employmentType, effectiveAssignment, singaporeDate, singaporeTime)) {
+            throw conflict('Full-Time OT submission is only allowed from 20:00 to 23:59 Singapore time');
+          }
+        }
         throw conflict('Submission is not permitted');
-      }
-      if (!isFullTimeOtSubmissionOpen(employmentType, effectiveAssignment, getSingaporeTime())) {
-        throw conflict('Full-Time OT submission opens at 20:00 Singapore time');
       }
       const now = new Date().toISOString();
       const actualWorkstation = safeString(request.body?.actualWorkstation, 200) || assignment.workstation;

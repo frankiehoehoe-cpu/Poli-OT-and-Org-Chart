@@ -160,27 +160,35 @@ function EmployeeSubmission({ assignment, employee, existing, saved, setError }:
   const employmentType = getEmploymentType(employee);
   const eligibleForAssignment = isEmployeeEligibleForAssignment(employmentType, assignment.assignmentMode, assignment.assignmentMode === 'work-shift' ? assignment.shiftType : undefined);
   if (!eligibleForAssignment) return <p className="mt-3 rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-700">Assignment no longer matches employment type / 此任务与当前雇佣类型不匹配</p>;
-  const isTodayOpen = assignment.date === getSingaporeDate() && !['CLOSED', 'CANCELLED'].includes(assignment.status);
-  const beforeOtOpen = !isFullTimeOtSubmissionOpen(employmentType, assignment, getSingaporeTime());
-  const allowed = isTodayOpen && !beforeOtOpen;
+  const singaporeDate = getSingaporeDate();
+  const singaporeTime = getSingaporeTime();
+  const isTodayOpen = assignment.date === singaporeDate && !['CLOSED', 'CANCELLED'].includes(assignment.status);
+  const fullTimeOt = employmentType === 'full-time' && assignment.assignmentMode === 'ot-task';
+  const otWindowOpen = isFullTimeOtSubmissionOpen(employmentType, assignment, singaporeDate, singaporeTime);
+  const beforeOtOpen = fullTimeOt && assignment.date === singaporeDate && singaporeTime < '20:00';
+  const afterOtWindow = fullTimeOt && assignment.date < singaporeDate;
+  const allowed = isTodayOpen && otWindowOpen;
   const submit = async () => {
     try { await workflowService.submit({ assignmentId: assignment.id, ...(employmentType === 'part-time' ? { actualStart: start, actualEnd: end } : { otHours: Number(hours) }) }); await saved(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Submission failed'); }
   };
   return (
     <div className="mt-3 space-y-2">
-      {beforeOtOpen && <p className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800">OT submission opens at 20:00 Singapore time / 加班填写于新加坡时间20:00开放</p>}
-      <div className="flex flex-wrap items-end gap-2">
-        {employmentType === 'part-time' ? (
-          <>
-            <Field label="Actual Start"><input type="time" value={start} onChange={(event) => setStart(event.target.value)} /></Field>
-            <Field label="Actual End"><input type="time" value={end} onChange={(event) => setEnd(event.target.value)} /></Field>
-          </>
-        ) : (
-          <Field label="OT Hours"><input type="number" min="0.5" max="12" step="0.5" value={hours} onChange={(event) => setHours(event.target.value)} /></Field>
-        )}
-        <button disabled={!allowed} className="min-h-12 rounded-xl bg-indigo-600 px-4 font-black text-white disabled:opacity-40" onClick={() => void submit()}>Submit</button>
-      </div>
+      {beforeOtOpen && <p className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800">OT submission opens only from 20:00 to 23:59 Singapore time / 加班只可于新加坡时间20:00至23:59填写</p>}
+      {afterOtWindow && <p className="rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-700">OT submission window closed. Please contact Supervisor for late entry / 已错过当天填写时间，请通知主管补录</p>}
+      {!afterOtWindow && (
+        <div className="flex flex-wrap items-end gap-2">
+          {employmentType === 'part-time' ? (
+            <>
+              <Field label="Actual Start"><input type="time" value={start} onChange={(event) => setStart(event.target.value)} /></Field>
+              <Field label="Actual End"><input type="time" value={end} onChange={(event) => setEnd(event.target.value)} /></Field>
+            </>
+          ) : beforeOtOpen ? null : (
+            <Field label="OT Hours"><input type="number" min="0.5" max="12" step="0.5" value={hours} onChange={(event) => setHours(event.target.value)} /></Field>
+          )}
+          {!beforeOtOpen && <button disabled={!allowed} className="min-h-12 rounded-xl bg-indigo-600 px-4 font-black text-white disabled:opacity-40" onClick={() => void submit()}>Submit</button>}
+        </div>
+      )}
     </div>
   );
 }
