@@ -40,6 +40,7 @@ import OrgChart from './components/OrgChart';
 import ManagerControlDashboard from './components/ManagerControlDashboard';
 import { getSingaporeMonth } from './lib/overtimeRisk';
 import { MixedMonthAnalytics } from './components/workflow/TaskWorkflow';
+import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
 import { OT_V13_ENABLED } from './lib/v13Flags';
 
 export default function ManagerPortal() {
@@ -533,7 +534,17 @@ export default function ManagerPortal() {
 
       {/* Main Content */}
       <main className="flex-1 p-6 lg:p-10 overflow-y-auto max-h-screen">
-        {OT_V13_ENABLED && (activeTab === 'dashboard' || activeTab === 'report') && <div className="mb-6"><MixedMonthAnalytics month={selectedMonth} /></div>}
+        {OT_V13_ENABLED && (activeTab === 'dashboard' || activeTab === 'report') && (
+          <div className="mb-6 space-y-6">
+            <MixedMonthAnalytics month={selectedMonth} />
+            <PartTimeAvailabilityCalendar
+              mode="readonly"
+              employees={employees}
+              month={selectedMonth}
+              title="Part-Time Planning / 兼职排班计划"
+            />
+          </div>
+        )}
         <header className="mb-10 flex items-center justify-between no-print">
           <div>
             <h2 className="text-3xl font-black text-slate-900">
