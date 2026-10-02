@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Role, UserProfile } from '../../types';
-import { getEmploymentType, getSingaporeDate, getSingaporeTime, isEmployeeEligibleForAssignment, isFullTimeOtSubmissionOpen, type EmployeeMonthAggregate, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../lib/workflows';
+import { getEmploymentType, getSingaporeDate, getSingaporeTime, isEmployeeEligibleForAssignment, isFullTimeOtSubmissionOpen, type EmployeeMonthAggregate, type PartTimeAvailability, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../lib/workflows';
 import { workflowService } from '../../lib/workflowService';
 
 const workstations = ['Mixing / 搅拌', 'Oven Drying / 烘干', 'Grinding / 研磨', 'Encapsulation / 进胶囊', 'Polishing / 抛光', 'Blistering / 压板', 'Print Code / 打码', 'Sacheting / 茶袋包装', 'Packing / 包装', 'Cleaning / 清洁', 'Changeover / 转线', 'Other Production Work / 其他生产工作'];
@@ -13,17 +13,23 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
   const [showHistory, setShowHistory] = useState(false);
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyStatus, setHistoryStatus] = useState<'ALL' | 'CLOSED' | 'CANCELLED'>('ALL');
+  const [availability, setAvailability] = useState<PartTimeAvailability[]>([]);
 
   const load = useCallback(async () => {
     try {
-      const [nextAssignments, nextSubmissions] = await Promise.all([workflowService.assignments(), workflowService.submissions()]);
+      const [nextAssignments, nextSubmissions, nextAvailability] = await Promise.all([
+        workflowService.assignments(),
+        workflowService.submissions(),
+        role === 'supervisor' ? workflowService.availability(getSingaporeDate().slice(0, 7)) : Promise.resolve([])
+      ]);
       setAssignments(nextAssignments);
       setSubmissions(nextSubmissions);
+      setAvailability(nextAvailability);
       setError('');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to load workflow');
     }
-  }, []);
+  }, [role]);
   useEffect(() => { void load(); }, [load]);
   const byAssignmentEmployee = useMemo(() => new Map(submissions.map((submission) => [`${submission.assignmentId}:${submission.employeeId}`, submission])), [submissions]);
   const visible = employeeId ? assignments.filter((assignment) => assignment.assignedEmployeeIds.includes(employeeId)) : assignments;
@@ -100,7 +106,7 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
       {role === 'supervisor' && <button className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white" onClick={() => setEditing(null)}>Create Assignment</button>}
     </div>
     {error && <p className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
-    {editing !== undefined && <AssignmentEditor employees={employees} assignment={editing} close={() => setEditing(undefined)} saved={async () => { setEditing(undefined); await load(); }} />}
+    {editing !== undefined && <AssignmentEditor employees={employees} availability={availability} assignment={editing} close={() => setEditing(undefined)} saved={async () => { setEditing(undefined); await load(); }} />}
 
     <div className="space-y-3">
       {(role === 'supervisor' ? supervisorActive : visible).map(renderAssignment)}
@@ -124,7 +130,7 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
   </section>;
 }
 
-function AssignmentEditor({ employees, assignment, close, saved }: { employees: UserProfile[]; assignment: WorkAssignment | null; close: () => void; saved: () => Promise<void> }) {
+function AssignmentEditor({ employees, availability, assignment, close, saved }: { employees: UserProfile[]; availability: PartTimeAvailability[]; assignment: WorkAssignment | null; close: () => void; saved: () => Promise<void> }) {
   const [mode, setMode] = useState(assignment?.assignmentMode || 'ot-task');
   const [shiftType, setShiftType] = useState<ShiftType>(assignment?.shiftType || 'PART_TIME_SHIFT');
   const [selected, setSelected] = useState<string[]>(assignment?.assignedEmployeeIds || []);
@@ -144,7 +150,12 @@ function AssignmentEditor({ employees, assignment, close, saved }: { employees: 
     <label className="text-sm font-bold">Workstation<select className="mt-1 w-full rounded-xl border p-3" value={form.workstation} onChange={(event) => setForm({ ...form, workstation: event.target.value })}>{workstations.map((station) => <option key={station}>{station}</option>)}</select></label>
     <Field label="Planned Start"><input type="time" value={form.plannedStart} onChange={(event) => setForm({ ...form, plannedStart: event.target.value })}/></Field>
     <Field label="Planned End"><input type="time" value={form.plannedEnd} onChange={(event) => setForm({ ...form, plannedEnd: event.target.value })}/></Field>
-    <div className="sm:col-span-2"><Field label="Requirement"><textarea required value={form.targetRequirement} onChange={(event) => setForm({ ...form, targetRequirement: event.target.value })}/></Field><p className="mt-3 text-sm font-black">ASSIGNED EMPLOYEES</p>{eligible.map((employee) => <label key={employee.id} className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={selected.includes(employee.id)} onChange={() => setSelected((current) => current.includes(employee.id) ? current.filter((id) => id !== employee.id) : [...current, employee.id])}/>{employee.name}</label>)}</div>
+    <div className="sm:col-span-2"><Field label="Requirement"><textarea required value={form.targetRequirement} onChange={(event) => setForm({ ...form, targetRequirement: event.target.value })}/></Field><p className="mt-3 text-sm font-black">ASSIGNED EMPLOYEES</p>{eligible.map((employee) => {
+      const partTimeAvailabilityMarked = mode === 'work-shift' && shiftType === 'PART_TIME_SHIFT'
+        ? availability.some((item) => item.employeeId === employee.id && item.date === form.date)
+        : false;
+      return <label key={employee.id} className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={selected.includes(employee.id)} onChange={() => setSelected((current) => current.includes(employee.id) ? current.filter((id) => id !== employee.id) : [...current, employee.id])}/><span>{employee.name}</span>{mode === 'work-shift' && shiftType === 'PART_TIME_SHIFT' && <span className={`ml-auto rounded-full px-2 py-1 text-[10px] font-black ${partTimeAvailabilityMarked ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{partTimeAvailabilityMarked ? 'AVAILABLE / 可上班' : 'NOT MARKED / 未标可上班'}</span>}</label>;
+    })}</div>
     {error && <p className="text-sm font-bold text-red-700 sm:col-span-2">{error}</p>}
     <div className="flex gap-2 sm:col-span-2"><button type="button" className="flex-1 rounded-xl border p-3 font-bold" onClick={close}>Cancel</button><button disabled={!selected.length} className="flex-1 rounded-xl bg-indigo-600 p-3 font-black text-white disabled:opacity-40">Save</button></div>
   </form>;
