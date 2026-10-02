@@ -77,6 +77,16 @@ export function PartTimeAvailabilityCalendar({
 
   useEffect(() => {
     void load();
+    const refresh = () => void load();
+    const visibilityRefresh = () => { if (document.visibilityState === 'visible') void load(); };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('otpro-workflow-changed', refresh);
+    document.addEventListener('visibilitychange', visibilityRefresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('otpro-workflow-changed', refresh);
+      document.removeEventListener('visibilitychange', visibilityRefresh);
+    };
   }, [month, employeeId, mode]);
 
   const savedDatesFor = (id: string) =>
