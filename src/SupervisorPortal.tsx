@@ -5,6 +5,7 @@ import { useTranslation } from './lib/LanguageContext';
 import { employeeService, overtimeService, reportService } from './lib/services';
 import { OvertimeEntry, UserProfile } from './types';
 import { TaskWorkflow } from './components/workflow/TaskWorkflow';
+import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
 import { ShiftNoticeControl } from './components/workflow/ShiftPlanning';
 import { OT_V13_ENABLED } from './lib/v13Flags';
 import { motion, AnimatePresence } from 'motion/react';
@@ -205,7 +206,16 @@ export default function SupervisorPortal() {
       </header>
 
       <main className="max-w-5xl mx-auto p-6 space-y-6">
-        {OT_V13_ENABLED && <><TaskWorkflow role="supervisor" employees={employees} /><ShiftNoticeControl employees={employees} /></>}
+        {OT_V13_ENABLED && <>
+          <TaskWorkflow role="supervisor" employees={employees} />
+          <PartTimeAvailabilityCalendar
+            mode="readonly"
+            employees={employees}
+            month={selectedMonth}
+            title="Part-Time Planning / 兼职排班计划"
+          />
+          <ShiftNoticeControl employees={employees} />
+        </>}
         <AnimatePresence mode="wait">
           {!selectedEmployeeId ? (
             <motion.div 
