@@ -69,13 +69,13 @@ export const workflowService = {
     return (await api<{ submission: WorkSubmission }>('/api/v13/submissions', { method: 'PATCH', body: JSON.stringify({ id, ...correction }) })).submission;
   },
   async availability(month: string): Promise<PartTimeAvailability[]> {
-    return (await api<{ availability: PartTimeAvailability[] }>(`/api/v13/availability?month=${encodeURIComponent(month)}`)).availability;
+    return (await api<{ availability: PartTimeAvailability[] }>(`/api/v13/assignments?resource=availability&month=${encodeURIComponent(month)}`)).availability;
   },
   async addAvailability(date: string): Promise<PartTimeAvailability> {
-    return (await api<{ availability: PartTimeAvailability }>('/api/v13/availability', { method: 'POST', body: JSON.stringify({ date }) })).availability;
+    return (await api<{ availability: PartTimeAvailability }>('/api/v13/assignments', { method: 'POST', body: JSON.stringify({ action: 'availability-add', date }) })).availability;
   },
   async removeAvailability(date: string): Promise<void> {
-    await api<{ deleted: boolean }>('/api/v13/availability', { method: 'DELETE', body: JSON.stringify({ date }) });
+    await api<{ deleted: boolean }>('/api/v13/assignments', { method: 'DELETE', body: JSON.stringify({ action: 'availability-remove', date }) });
   },
   async notices(): Promise<ShiftNotice[]> {
     return (await api<{ notices: ShiftNotice[] }>('/api/v13/shift-notices')).notices;
