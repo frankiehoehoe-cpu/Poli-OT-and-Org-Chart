@@ -152,9 +152,12 @@ export const isEmployeeEligibleForAssignment = (
 
 export const isFullTimeOtSubmissionOpen = (
   employmentType: EmploymentType,
-  assignment: Pick<WorkAssignment, 'assignmentMode'>,
+  assignment: Pick<WorkAssignment, 'assignmentMode' | 'date'>,
+  singaporeDate: string,
   singaporeTime: string
-): boolean => employmentType !== 'full-time' || assignment.assignmentMode !== 'ot-task' || singaporeTime >= '20:00';
+): boolean => employmentType !== 'full-time' || assignment.assignmentMode !== 'ot-task' || (
+  assignment.date === singaporeDate && singaporeTime >= '20:00' && singaporeTime < '24:00'
+);
 
 export const deterministicSubmissionId = (assignmentId: string, employeeId: string) =>
   `${assignmentId}__${employeeId}`;
@@ -169,7 +172,7 @@ export const getSingaporeDate = (date = new Date()): string => {
 
 export const getSingaporeTime = (date = new Date()): string => {
   const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', hour12: false
+    timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
   }).formatToParts(date);
   const value = (type: string) => parts.find((part) => part.type === type)?.value || '';
   return `${value('hour')}:${value('minute')}`;
@@ -190,14 +193,19 @@ export function canEmployeeSubmit(input: {
   employmentType: EmploymentType;
   assignment: WorkAssignment;
   singaporeDate: string;
+  singaporeTime: string;
   submissionExists: boolean;
 }): boolean {
-  const { employeeId, employmentType, assignment, singaporeDate, submissionExists } = input;
+  const { employeeId, employmentType, assignment, singaporeDate, singaporeTime, submissionExists } = input;
   if (submissionExists || assignment.date !== singaporeDate) return false;
   if (assignment.status === 'CLOSED' || assignment.status === 'CANCELLED') return false;
   if (!assignment.assignedEmployeeIds.includes(employeeId)) return false;
   if (assignment.shiftType === 'SECOND_SHIFT') return false;
-  return isEmployeeEligibleForAssignment(employmentType, assignment.assignmentMode, assignment.shiftType ?? (employmentType === 'part-time' ? 'PART_TIME_SHIFT' : undefined));
+  if (!isEmployeeEligibleForAssignment(employmentType, assignment.assignmentMode, assignment.shiftType ?? (employmentType === 'part-time' ? 'PART_TIME_SHIFT' : undefined))) return false;
+  if (employmentType === 'full-time' && assignment.assignmentMode === 'ot-task') {
+    return isFullTimeOtSubmissionOpen(employmentType, assignment, singaporeDate, singaporeTime);
+  }
+  return true;
 }
 
 export function applyEffectiveCorrection(
