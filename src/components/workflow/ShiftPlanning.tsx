@@ -1,47 +1,78 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { doc, onSnapshot, type Unsubscribe } from 'firebase/firestore';
 import type { UserProfile } from '../../types';
 import { getSingaporeDate, type ShiftNotice } from '../../lib/workflows';
-import { workflowService, type PublicAssignment } from '../../lib/workflowService';
+import { db } from '../../lib/firebase';
+import { workflowService, type PublicAssignment, type PublicOverviewResponse } from '../../lib/workflowService';
 
 export function PublicShiftNotices() {
   const [notices, setNotices] = useState<ShiftNotice[]>([]);
   const [assignments, setAssignments] = useState<PublicAssignment[]>([]);
   const [publicDate, setPublicDate] = useState(getSingaporeDate());
+  const publicDateRef = useRef(publicDate);
 
-  const load = useCallback(async () => {
-    const [nextNotices, overview] = await Promise.all([
-      workflowService.notices().catch(() => [] as ShiftNotice[]),
-      workflowService.publicOverview().catch(() => ({ date: getSingaporeDate(), assignments: [] as PublicAssignment[] }))
-    ]);
-    setNotices(nextNotices);
+  const applyOverview = useCallback((overview: Pick<PublicOverviewResponse, 'date' | 'assignments' | 'notices'>) => {
+    setNotices(overview.notices || []);
     setPublicDate(overview.date);
-    setAssignments(overview.assignments);
+    publicDateRef.current = overview.date;
+    setAssignments(overview.assignments || []);
   }, []);
 
+  const load = useCallback(async () => {
+    const overview = await workflowService.publicOverview();
+    applyOverview(overview);
+    return overview;
+  }, [applyOverview]);
+
   useEffect(() => {
-    void load();
+    let unsubscribe: Unsubscribe | undefined;
+    let fallbackIntervalId: number | undefined;
+    let stopped = false;
 
-    const intervalId = window.setInterval(() => {
-      void load();
-    }, 30000);
-
-    const refreshOnFocus = () => void load();
-    const refreshOnVisibility = () => {
-      if (document.visibilityState === 'visible') void load();
+    const startFallback = () => {
+      if (fallbackIntervalId !== undefined) return;
+      fallbackIntervalId = window.setInterval(() => {
+        void load().catch(() => undefined);
+      }, 60000);
     };
-    const refreshOnWorkflowChange = () => void load();
 
-    window.addEventListener('focus', refreshOnFocus);
-    window.addEventListener('otpro-workflow-changed', refreshOnWorkflowChange);
-    document.addEventListener('visibilitychange', refreshOnVisibility);
+    const start = async () => {
+      try {
+        const overview = await load();
+        if (stopped) return;
+        const overviewRef = doc(db, overview.realtime.collection, overview.realtime.documentId);
+        unsubscribe = onSnapshot(
+          overviewRef,
+          (snapshot) => {
+            if (!snapshot.exists()) return;
+            const data = snapshot.data() as Pick<PublicOverviewResponse, 'date' | 'assignments' | 'notices'>;
+            applyOverview(data);
+          },
+          () => {
+            startFallback();
+          }
+        );
+      } catch {
+        startFallback();
+      }
+    };
+
+    void start();
+
+    const dateCheckIntervalId = window.setInterval(() => {
+      const singaporeDate = getSingaporeDate();
+      if (singaporeDate !== publicDateRef.current) {
+        void load().catch(() => undefined);
+      }
+    }, 60000);
 
     return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', refreshOnFocus);
-      window.removeEventListener('otpro-workflow-changed', refreshOnWorkflowChange);
-      document.removeEventListener('visibilitychange', refreshOnVisibility);
+      stopped = true;
+      unsubscribe?.();
+      window.clearInterval(dateCheckIntervalId);
+      if (fallbackIntervalId !== undefined) window.clearInterval(fallbackIntervalId);
     };
-  }, [load]);
+  }, [applyOverview, load]);
 
   const secondShifts = assignments.filter((assignment) => assignment.shiftType === 'SECOND_SHIFT' && assignment.status !== 'CLOSED');
   const hourAssignments = assignments.filter((assignment) => assignment.shiftType !== 'SECOND_SHIFT' && assignment.date === publicDate);

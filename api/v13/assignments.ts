@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { getServerDocument, listServerDocuments, updateServerDocument, createServerDocument, deleteServerDocument } from '../_firebaseAdmin.js';
 import { getV13Collections } from '../_v13Collections.js';
 import { getEffectiveEmployee, listEffectiveEmployees } from '../_v13Employees.js';
+import { rebuildCurrentPublicOverview } from '../_publicOverview.js';
 import { requireSession } from '../_session.js';
 import { badRequest, conflict, requireV13Mutation, safeString, safeStringArray, sendApiError } from '../_v13.js';
 import { getEffectiveShiftType, getEmploymentType, getSingaporeDate, isEmployeeEligibleForAssignment, type AssignmentMode, type PartTimeAvailability, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
@@ -143,6 +144,9 @@ export default async function handler(request: Request, response: Response) {
       await validateAssignedEmployees(assignment.assignedEmployeeIds, assignment.assignmentMode, assignment.shiftType);
       const created: WorkAssignment = { ...assignment, createdBy: session.subject, createdAt: now, updatedAt: now, revision: 1 };
       await createServerDocument(collections.assignments, created.id, created as unknown as Record<string, unknown>);
+      await rebuildCurrentPublicOverview().catch((error) => {
+        console.error('Public overview refresh after assignment create failed', error instanceof Error ? error.message : error);
+      });
       return response.status(201).json({ assignment: created });
     }
 
@@ -187,6 +191,9 @@ export default async function handler(request: Request, response: Response) {
 
       updated = { ...updated, updatedAt: now, revision: assignment.revision + 1 };
       await updateServerDocument(collections.assignments, id, updated as unknown as Record<string, unknown>, document.updateTime);
+      await rebuildCurrentPublicOverview().catch((error) => {
+        console.error('Public overview refresh after assignment update failed', error instanceof Error ? error.message : error);
+      });
       return response.status(200).json({ assignment: updated });
     }
 

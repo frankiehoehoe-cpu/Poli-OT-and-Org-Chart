@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { createServerDocument, getServerDocument, listEmployees, listServerDocuments, updateServerDocument } from '../_firebaseAdmin.js';
 import { getV13Collections } from '../_v13Collections.js';
+import { rebuildCurrentPublicOverview } from '../_publicOverview.js';
 import { readSession } from '../_session.js';
 import { badRequest, requireV13Mutation, safeString, safeStringArray, sendApiError } from '../_v13.js';
 import { getSingaporeDate, type ShiftNotice } from '../../src/lib/workflows.js';
@@ -55,6 +56,9 @@ export default async function handler(request: Request, response: Response) {
         updatedAt: now
       };
       await createServerDocument(collections.shiftNotices, notice.id, notice as unknown as Record<string, unknown>);
+      await rebuildCurrentPublicOverview().catch((error) => {
+        console.error('Public overview refresh after notice create failed', error instanceof Error ? error.message : error);
+      });
       return response.status(201).json({ notice });
     }
 
@@ -71,6 +75,9 @@ export default async function handler(request: Request, response: Response) {
           ? { ...document.data, id, visibility: request.body?.visibility === 'HIDDEN' ? 'HIDDEN' : 'VISIBLE', updatedAt: now }
           : { ...document.data, id, note: safeString(request.body?.note, 1000) || undefined, updatedAt: now };
       await updateServerDocument(collections.shiftNotices, id, notice as unknown as Record<string, unknown>, document.updateTime);
+      await rebuildCurrentPublicOverview().catch((error) => {
+        console.error('Public overview refresh after notice update failed', error instanceof Error ? error.message : error);
+      });
       return response.status(200).json({ notice });
     }
 

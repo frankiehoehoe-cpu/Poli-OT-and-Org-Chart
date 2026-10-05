@@ -24,6 +24,18 @@ export interface PublicAssignment {
   participants: PublicAssignmentParticipant[];
 }
 
+export interface PublicOverviewResponse {
+  schemaVersion: 1;
+  date: string;
+  assignments: PublicAssignment[];
+  notices: ShiftNotice[];
+  updatedAt: string;
+  realtime: {
+    collection: string;
+    documentId: string;
+  };
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -40,7 +52,7 @@ export const workflowService = {
   async assignments(): Promise<WorkAssignment[]> {
     return (await api<{ assignments: WorkAssignment[] }>('/api/v13/assignments')).assignments;
   },
-  async publicOverview(): Promise<{ date: string; assignments: PublicAssignment[] }> {
+  async publicOverview(): Promise<PublicOverviewResponse> {
     return api('/api/v13/public-overview');
   },
   async saveAssignment(assignment: Partial<WorkAssignment>, existing?: WorkAssignment): Promise<WorkAssignment> {
