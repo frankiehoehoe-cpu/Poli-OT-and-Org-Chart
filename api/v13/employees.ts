@@ -4,6 +4,7 @@ import { createServerDocument, deleteServerDocument, getEmployee, getServerDocum
 import { isSameOrigin, requireRole } from '../_session.js';
 import { V13WritesDisabledError, badRequest, requireV13WritesEnabled, safeString, sendApiError } from '../_v13.js';
 import { isV13IsolatedTestMode } from '../_v13Collections.js';
+import { rebuildCurrentPublicOverview } from '../_publicOverview.js';
 import { getEffectiveEmployee, setIsolatedEmploymentType } from '../_v13Employees.js';
 import type { EmploymentType } from '../../src/lib/workflows.js';
 
@@ -39,6 +40,9 @@ export default async function handler(request: Request, response: Response) {
       const id = randomUUID();
       const employee: ServerEmployee = { id, name, role: 'employee', department, passwordHash: hashPassword(password), ...(employmentType ? { employmentType } : {}) };
       await createServerDocument('employees', id, employee as unknown as Record<string, unknown>);
+      await rebuildCurrentPublicOverview().catch((error) => {
+        console.error('Public overview refresh after employee create failed', error instanceof Error ? error.message : error);
+      });
       return response.status(201).json({ employee: publicEmployee(employee) });
     }
 
@@ -49,6 +53,9 @@ export default async function handler(request: Request, response: Response) {
 
     if (request.method === 'DELETE') {
       await deleteServerDocument('employees', id, document.updateTime);
+      await rebuildCurrentPublicOverview().catch((error) => {
+        console.error('Public overview refresh after employee delete failed', error instanceof Error ? error.message : error);
+      });
       return response.status(200).json({ deleted: true });
     }
 
@@ -64,6 +71,9 @@ export default async function handler(request: Request, response: Response) {
       ...(password ? { passwordHash: hashPassword(password) } : {})
     };
     await patchServerDocumentFields('employees', id, fields, password ? ['password'] : [], document.updateTime);
+    await rebuildCurrentPublicOverview().catch((error) => {
+      console.error('Public overview refresh after employee update failed', error instanceof Error ? error.message : error);
+    });
     const updated: ServerEmployee = {
       ...existing,
       name,
