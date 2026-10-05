@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext';
 import { useTranslation } from './lib/LanguageContext';
 import { employeeService, overtimeService, reportService } from './lib/services';
+import { workflowService } from './lib/workflowService';
+import type { EmployeeMonthAggregate, WorkAssignment, WorkSubmission } from './lib/workflows';
 import { OvertimeEntry, UserProfile } from './types';
 import { TaskWorkflow } from './components/workflow/TaskWorkflow';
 import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
@@ -50,6 +52,9 @@ export default function SupervisorPortal() {
   const [search, setSearch] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [v13Submissions, setV13Submissions] = useState<WorkSubmission[]>([]);
+  const [v13Assignments, setV13Assignments] = useState<WorkAssignment[]>([]);
+  const [v13Aggregates, setV13Aggregates] = useState<EmployeeMonthAggregate[]>([]);
 
   // Signature States
   const [employeeReport, setEmployeeReport] = useState<any>(null);
@@ -70,6 +75,30 @@ export default function SupervisorPortal() {
   useEffect(() => {
     fetchEmployeeReport();
   }, [selectedMonth, selectedEmployeeId]);
+
+  const fetchV13Month = async () => {
+    if (!OT_V13_ENABLED) return;
+    const [submissions, assignments, monthData] = await Promise.all([
+      workflowService.submissions(selectedMonth),
+      workflowService.assignments(),
+      workflowService.month(selectedMonth)
+    ]);
+    setV13Submissions(submissions);
+    setV13Assignments(assignments);
+    setV13Aggregates(monthData.aggregates);
+  };
+
+  useEffect(() => {
+    if (!OT_V13_ENABLED) return;
+    void fetchV13Month();
+    const refresh = () => void fetchV13Month();
+    window.addEventListener('otpro-workflow-changed', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener('otpro-workflow-changed', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [selectedMonth]);
 
   const fetchEntries = async () => {
     const data = await overtimeService.getAllEntries(selectedMonth);
