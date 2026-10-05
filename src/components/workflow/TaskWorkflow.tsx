@@ -63,13 +63,13 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
       const start = window.prompt('Corrected actual start', submission.correctedStart || submission.originalStart || '');
       const end = window.prompt('Corrected actual end', submission.correctedEnd || submission.originalEnd || '');
       if (!start || !end) return;
-      try { await workflowService.correct(submission.id, { start, end, note }); await load(); }
+      try { await workflowService.correct(submission.id, { start, end, note }); await load(); notifyWorkflowChanged(); }
       catch (reason) { setError(reason instanceof Error ? reason.message : 'Correction failed'); }
       return;
     }
     const candidate = window.prompt('Corrected OT hours', String(submission.effectiveOtHours ?? submission.originalOtHours ?? ''));
     if (!candidate) return;
-    try { await workflowService.correct(submission.id, { hours: Number(candidate), note }); await load(); }
+    try { await workflowService.correct(submission.id, { hours: Number(candidate), note }); await load(); notifyWorkflowChanged(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Correction failed'); }
   };
 
@@ -88,6 +88,7 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
         await workflowService.lateSubmit({ assignmentId: assignment.id, employeeId: employee.id, reason: reason.trim(), otHours: Number(candidate) });
       }
       await load();
+      notifyWorkflowChanged();
     } catch (reasonValue) { setError(reasonValue instanceof Error ? reasonValue.message : 'Late submission failed'); }
   };
 
