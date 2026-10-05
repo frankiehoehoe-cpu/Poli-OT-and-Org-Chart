@@ -150,11 +150,23 @@ async function saveSnapshot(snapshot: PublicOverviewSnapshot): Promise<PublicOve
       snapshot as unknown as Record<string, unknown>,
       existing.updateTime
     );
-  } else {
+    return snapshot;
+  }
+
+  try {
     await createServerDocument(
       collections.publicOverview,
       SNAPSHOT_ID,
       snapshot as unknown as Record<string, unknown>
+    );
+  } catch {
+    const raced = await getServerDocument<PublicOverviewSnapshot>(collections.publicOverview, SNAPSHOT_ID);
+    if (!raced) throw new Error('Public overview snapshot create failed');
+    await updateServerDocument(
+      collections.publicOverview,
+      SNAPSHOT_ID,
+      snapshot as unknown as Record<string, unknown>,
+      raced.updateTime
     );
   }
   return snapshot;
