@@ -71,6 +71,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Sanitized, server-maintained Public Overview snapshot.
+    // The browser may listen only to the single "current" document.
+    match /publicOverview/{documentId} {
+      allow get: if documentId == 'current';
+      allow list, create, update, delete: if false;
+    }
+    match /otv13_test_publicOverview/{documentId} {
+      allow get: if documentId == 'current';
+      allow list, create, update, delete: if false;
+    }
+
     // --- Overtime Entries ---
     match /overtime/{entryId} {
       allow create: if isValidOvertime(incoming());
