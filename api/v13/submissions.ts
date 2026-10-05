@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { commitServerDocuments, getServerDocument, listServerDocuments, updateServerDocument } from '../_firebaseAdmin.js';
 import { getV13Collections } from '../_v13Collections.js';
 import { getEffectiveEmployee } from '../_v13Employees.js';
+import { updateCurrentOverviewForSubmission } from '../_publicOverview.js';
 import { requireSession } from '../_session.js';
 import { badRequest, conflict, requireV13Mutation, safeString, sendApiError } from '../_v13.js';
 import {
@@ -95,6 +96,9 @@ export default async function handler(request: Request, response: Response) {
       await commitServerDocuments([
         { collection: collections.submissions, id, data: submission as unknown as Record<string, unknown>, exists: false }
       ]);
+      await updateCurrentOverviewForSubmission(submission).catch((error) => {
+        console.error('Public overview refresh after late submission failed', error instanceof Error ? error.message : error);
+      });
       return response.status(201).json({ submission });
     }
 
@@ -173,6 +177,9 @@ export default async function handler(request: Request, response: Response) {
         { collection: collections.submissions, id, data: submission as unknown as Record<string, unknown>, exists: false },
         { collection: collections.assignments, id: assignmentId, data: updatedAssignment as unknown as Record<string, unknown>, updateTime: assignmentDocument.updateTime }
       ]);
+      await updateCurrentOverviewForSubmission(submission).catch((error) => {
+        console.error('Public overview refresh after submission failed', error instanceof Error ? error.message : error);
+      });
       return response.status(201).json({ submission });
     }
 
@@ -191,6 +198,9 @@ export default async function handler(request: Request, response: Response) {
         correctedAt
       });
       await updateServerDocument(collections.submissions, id, corrected as unknown as Record<string, unknown>, document.updateTime);
+      await updateCurrentOverviewForSubmission(corrected).catch((error) => {
+        console.error('Public overview refresh after correction failed', error instanceof Error ? error.message : error);
+      });
       return response.status(200).json({ submission: corrected });
     }
 
