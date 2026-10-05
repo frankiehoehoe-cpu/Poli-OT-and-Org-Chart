@@ -417,12 +417,63 @@ export default function SupervisorPortal() {
                   <div className="flex items-center gap-3">
                      <div className="text-right">
                         <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest mb-1">Total Hours</p>
-                        <p className="text-2xl font-black text-indigo-600">{filteredDetailEntries.reduce((acc, curr) => acc + (curr.multiplier === 2.0 ? 0 : curr.totalHours), 0).toFixed(1)}h</p>
+                        <p className="text-2xl font-black text-indigo-600">{selectedEffectiveTotal.toFixed(1)}h</p>
                      </div>
                   </div>
                 </div>
 
                 <div className="divide-y divide-slate-100 min-h-[200px]">
+                  {selectedV13Submissions.map((submission, idx) => {
+                    const assignment = v13Assignments.find((item) => item.id === submission.assignmentId);
+                    const hours = submission.employmentTypeSnapshot === 'part-time'
+                      ? (submission.effectiveWorkedHours ?? submission.originalWorkedHours ?? 0)
+                      : (submission.effectiveOtHours ?? submission.originalOtHours ?? 0);
+                    return (
+                      <motion.div
+                        key={submission.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.03 }}
+                        className="p-6 sm:p-8 bg-indigo-50/30"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                          <div className="flex flex-wrap items-center gap-8">
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+                                <Calendar className="w-3 h-3 text-slate-600" />
+                                {t('date')}
+                              </p>
+                              <p className="text-base font-bold text-slate-900 tracking-tight">{formatDateWithDay(submission.taskDate)}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+                                <Clock className="w-3 h-3 text-slate-600" />
+                                {t('time')}
+                              </p>
+                              <p className="text-base font-bold text-slate-700 tracking-tight">
+                                {assignment ? `${formatTime(assignment.plannedStart)} - ${formatTime(assignment.plannedEnd)}` : 'V1.3 Task'}
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Workstation / 工位</p>
+                              <p className="text-base font-bold text-slate-700">{submission.actualWorkstation}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{submission.employmentTypeSnapshot === 'part-time' ? 'Worked Hours / 工时' : 'OT Hours / 加班时数'}</p>
+                              <p className="text-lg font-black text-indigo-600 tracking-tight">{hours.toFixed(1)}<span className="text-xs ml-0.5">h</span></p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest mb-1">Status</p>
+                              <div className="flex flex-wrap gap-2">
+                                <span className="px-3 py-1 rounded-full text-[10px] font-black border bg-emerald-50 text-emerald-600 border-emerald-100">V1.3 SUBMITTED</span>
+                                {submission.lateEntry && <span className="px-3 py-1 rounded-full text-[10px] font-black border bg-orange-50 text-orange-700 border-orange-100">LATE ENTRY / 主管补录</span>}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
                   {filteredDetailEntries.map((entry, idx) => {
                     return (
                       <motion.div 
@@ -516,7 +567,7 @@ export default function SupervisorPortal() {
                       </motion.div>
                     );
                   })}
-                  {filteredDetailEntries.length === 0 && (
+                  {filteredDetailEntries.length === 0 && selectedV13Submissions.length === 0 && (
                     <div className="p-20 text-center text-slate-600 font-bold uppercase tracking-widest text-xs">
                       No records for this month
                     </div>
