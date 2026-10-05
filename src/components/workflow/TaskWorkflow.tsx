@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Role, UserProfile } from '../../types';
-import { getEmploymentType, getSingaporeDate, getSingaporeTime, isEmployeeEligibleForAssignment, isFullTimeOtSubmissionOpen, type EmployeeMonthAggregate, type PartTimeAvailability, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../lib/workflows';
+import { calculateWorkedHours, getEmploymentType, getSingaporeDate, getSingaporeTime, isEmployeeEligibleForAssignment, isFullTimeOtSubmissionOpen, isPartTimeWorkSubmissionOpen, type EmployeeMonthAggregate, type PartTimeAvailability, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../lib/workflows';
 import { workflowService } from '../../lib/workflowService';
 
 const workstations = ['Mixing / 搅拌', 'Oven Drying / 烘干', 'Grinding / 研磨', 'Encapsulation / 进胶囊', 'Polishing / 抛光', 'Blistering / 压板', 'Print Code / 打码', 'Sacheting / 茶袋包装', 'Packing / 包装', 'Cleaning / 清洁', 'Changeover / 转线', 'Other Production Work / 其他生产工作'];
@@ -18,6 +18,7 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyStatus, setHistoryStatus] = useState<'ALL' | 'CLOSED' | 'CANCELLED'>('ALL');
   const [availability, setAvailability] = useState<PartTimeAvailability[]>([]);
+  const [showManualEntry, setShowManualEntry] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -109,10 +110,19 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
   return <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5">
     <div className="flex items-center justify-between gap-3">
       <div><p className="text-xs font-black uppercase tracking-widest text-indigo-600">OT PRO V1.3</p><h2 className="text-xl font-black">Work Assignments / 工作任务</h2></div>
-      {role === 'supervisor' && <button className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white" onClick={() => setEditing(null)}>Create Assignment</button>}
+      {role === 'supervisor' && <div className="flex flex-wrap gap-2">
+        <button className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-800" onClick={() => setShowManualEntry((value) => !value)}>Manual Entry / 主管补录</button>
+        <button className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white" onClick={() => setEditing(null)}>Create Assignment</button>
+      </div>}
     </div>
     {error && <p className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
     {editing !== undefined && <AssignmentEditor employees={employees} availability={availability} assignment={editing} close={() => setEditing(undefined)} saved={async () => { setEditing(undefined); await load(); notifyWorkflowChanged(); }} />}
+
+    {role === 'supervisor' && showManualEntry && <SupervisorManualEntry
+      employees={employees}
+      close={() => setShowManualEntry(false)}
+      saved={async () => { setShowManualEntry(false); await load(); notifyWorkflowChanged(); }}
+    />}
 
     <div className="space-y-3">
       {(role === 'supervisor' ? supervisorActive : visible).map(renderAssignment)}
@@ -174,40 +184,140 @@ function EmployeeSubmission({ assignment, employee, existing, saved, setError }:
   if (!employee) return null;
   if (assignment.shiftType === 'SECOND_SHIFT') return <div className="mt-3 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-900"><strong>2ND SHIFT / 中班</strong><p>{assignment.date} · {assignment.plannedStart}–{assignment.plannedEnd} · {assignment.workstation}</p><p>{assignment.targetRequirement}</p><p className="mt-1 font-black">NO HOURS SUBMISSION REQUIRED / 无需填写工时</p></div>;
   if (existing) return <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">Submitted: {existing.employmentTypeSnapshot === 'part-time' ? `${existing.effectiveWorkedHours} worked hours` : `${existing.effectiveOtHours} OT hours`}{existing.lateEntry ? ' · Supervisor late entry / 主管补录' : ''}</p>;
+
   const employmentType = getEmploymentType(employee);
   const eligibleForAssignment = isEmployeeEligibleForAssignment(employmentType, assignment.assignmentMode, assignment.assignmentMode === 'work-shift' ? assignment.shiftType : undefined);
   if (!eligibleForAssignment) return <p className="mt-3 rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-700">Assignment no longer matches employment type / 此任务与当前雇佣类型不匹配</p>;
+
   const singaporeDate = getSingaporeDate();
   const singaporeTime = getSingaporeTime();
   const isTodayOpen = assignment.date === singaporeDate && !['CLOSED', 'CANCELLED'].includes(assignment.status);
   const fullTimeOt = employmentType === 'full-time' && assignment.assignmentMode === 'ot-task';
-  const otWindowOpen = isFullTimeOtSubmissionOpen(employmentType, assignment, singaporeDate, singaporeTime);
-  const beforeOtOpen = fullTimeOt && assignment.date === singaporeDate && singaporeTime < '20:00';
-  const afterOtWindow = fullTimeOt && assignment.date < singaporeDate;
-  const allowed = isTodayOpen && otWindowOpen;
+  const partTimeShift = employmentType === 'part-time' && assignment.assignmentMode === 'work-shift' && assignment.shiftType === 'PART_TIME_SHIFT';
+  const windowOpen = fullTimeOt
+    ? isFullTimeOtSubmissionOpen(employmentType, assignment, singaporeDate, singaporeTime)
+    : partTimeShift
+      ? isPartTimeWorkSubmissionOpen(employmentType, assignment, singaporeDate, singaporeTime)
+      : true;
+  const beforeWindow = assignment.date === singaporeDate && (
+    (fullTimeOt && singaporeTime < '20:00') ||
+    (partTimeShift && singaporeTime < '17:00')
+  );
+  const afterWindow = assignment.date < singaporeDate;
+  const futureDate = assignment.date > singaporeDate;
+  const allowed = isTodayOpen && windowOpen;
+
   const submit = async () => {
-    try { await workflowService.submit({ assignmentId: assignment.id, ...(employmentType === 'part-time' ? { actualStart: start, actualEnd: end } : { otHours: Number(hours) }) }); await saved(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Submission failed'); }
+    try {
+      await workflowService.submit({
+        assignmentId: assignment.id,
+        ...(employmentType === 'part-time' ? { actualStart: start, actualEnd: end } : { otHours: Number(hours) })
+      });
+      await saved();
+      notifyWorkflowChanged();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Submission failed');
+    }
   };
+
   return (
     <div className="mt-3 space-y-2">
-      {beforeOtOpen && <p className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800">OT submission opens only from 20:00 to 23:59 Singapore time / 加班只可于新加坡时间20:00至23:59填写</p>}
-      {afterOtWindow && <p className="rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-700">OT submission window closed. Please contact Supervisor for late entry / 已错过当天填写时间，请通知主管补录</p>}
-      {!afterOtWindow && (
+      {beforeWindow && <p className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800">
+        {partTimeShift
+          ? 'Part-Time worked hours can only be submitted from 17:00 to 23:59 Singapore time / 兼职工时只可于新加坡时间17:00至23:59填写'
+          : 'OT submission opens only from 20:00 to 23:59 Singapore time / 加班只可于新加坡时间20:00至23:59填写'}
+      </p>}
+      {futureDate && <p className="rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-700">
+        {partTimeShift
+          ? 'Part-Time submission opens at 17:00 on the assigned date / 兼职工时于排班当天17:00开放'
+          : 'OT submission opens at 20:00 on the assigned date / 加班于安排当天20:00开放'}
+      </p>}
+      {afterWindow && <p className="rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-700">Submission window closed. Please contact Supervisor for late entry / 已错过当天填写时间，请通知主管补录</p>}
+      {!beforeWindow && !futureDate && !afterWindow && (
         <div className="flex flex-wrap items-end gap-2">
           {employmentType === 'part-time' ? (
             <>
-              <Field label="Actual Start"><input type="time" value={start} onChange={(event) => setStart(event.target.value)} /></Field>
-              <Field label="Actual End"><input type="time" value={end} onChange={(event) => setEnd(event.target.value)} /></Field>
+              <Field label="Actual Start / 实际开始"><input type="time" value={start} onChange={(event) => setStart(event.target.value)} /></Field>
+              <Field label="Actual End / 实际结束"><input type="time" value={end} onChange={(event) => setEnd(event.target.value)} /></Field>
             </>
-          ) : beforeOtOpen ? null : (
-            <Field label="OT Hours"><input type="number" min="0.5" max="12" step="0.5" value={hours} onChange={(event) => setHours(event.target.value)} /></Field>
+          ) : (
+            <Field label="OT Hours / 加班时数"><input type="number" min="0.5" max="12" step="0.5" value={hours} onChange={(event) => setHours(event.target.value)} /></Field>
           )}
-          {!beforeOtOpen && <button disabled={!allowed} className="min-h-12 rounded-xl bg-indigo-600 px-4 font-black text-white disabled:opacity-40" onClick={() => void submit()}>Submit</button>}
+          <button disabled={!allowed} className="min-h-12 rounded-xl bg-indigo-600 px-4 font-black text-white disabled:opacity-40" onClick={() => void submit()}>Submit</button>
         </div>
       )}
     </div>
   );
+}
+
+function SupervisorManualEntry({ employees, close, saved }: { employees: UserProfile[]; close: () => void; saved: () => Promise<void> }) {
+  const employeeOptions = employees.filter((employee) => employee.role === 'employee');
+  const [employeeId, setEmployeeId] = useState(employeeOptions[0]?.id || '');
+  const selectedEmployee = employeeOptions.find((employee) => employee.id === employeeId);
+  const employmentType = selectedEmployee ? getEmploymentType(selectedEmployee) : 'full-time';
+  const [date, setDate] = useState(getSingaporeDate());
+  const [startTime, setStartTime] = useState('18:00');
+  const [endTime, setEndTime] = useState('20:00');
+  const [hours, setHours] = useState('2');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const updateHoursFromTimes = (nextStart: string, nextEnd: string, type = employmentType) => {
+    const span = calculateWorkedHours(nextStart, nextEnd);
+    if (span === null) return;
+    const rounded = type === 'part-time' ? Math.round(span * 4) / 4 : Math.round(span * 2) / 2;
+    setHours(String(rounded));
+  };
+
+  const changeEmployee = (id: string) => {
+    setEmployeeId(id);
+    const employee = employeeOptions.find((item) => item.id === id);
+    const type = employee ? getEmploymentType(employee) : 'full-time';
+    const nextStart = type === 'part-time' ? '09:00' : '18:00';
+    const nextEnd = type === 'part-time' ? '17:00' : '20:00';
+    setStartTime(nextStart);
+    setEndTime(nextEnd);
+    updateHoursFromTimes(nextStart, nextEnd, type);
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!employeeId) return;
+    setSaving(true);
+    setError('');
+    try {
+      await workflowService.manualEntry({ employeeId, date, startTime, endTime, hours: Number(hours) });
+      await saved();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Manual entry failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <form onSubmit={submit} className="grid gap-3 rounded-2xl border border-orange-200 bg-orange-50 p-4 sm:grid-cols-2">
+    <div className="sm:col-span-2">
+      <p className="text-xs font-black uppercase tracking-widest text-orange-700">SUPERVISOR MANUAL ENTRY / 主管补录</p>
+      <p className="mt-1 text-sm font-bold text-slate-600">For missed FT OT or PT worked-hours records / 用于漏填的全职加班或兼职工时</p>
+    </div>
+    <label className="text-sm font-bold">Employee / 员工
+      <select className="mt-1 w-full rounded-xl border p-3" value={employeeId} onChange={(event) => changeEmployee(event.target.value)}>
+        {employeeOptions.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getEmploymentType(employee) === 'part-time' ? 'PT' : 'FT'}</option>)}
+      </select>
+    </label>
+    <Field label="Date / 日期"><input type="date" max={getSingaporeDate()} value={date} onChange={(event) => setDate(event.target.value)} /></Field>
+    <Field label="Start Time / 开始时间"><input type="time" value={startTime} onChange={(event) => { setStartTime(event.target.value); updateHoursFromTimes(event.target.value, endTime); }} /></Field>
+    <Field label="End Time / 结束时间"><input type="time" value={endTime} onChange={(event) => { setEndTime(event.target.value); updateHoursFromTimes(startTime, event.target.value); }} /></Field>
+    <Field label={employmentType === 'part-time' ? 'Worked Hours / 工作时长' : 'OT Hours / 加班时长'}><input type="number" min={employmentType === 'part-time' ? '0.25' : '0.5'} max={employmentType === 'part-time' ? '24' : '12'} step={employmentType === 'part-time' ? '0.25' : '0.5'} value={hours} onChange={(event) => setHours(event.target.value)} /></Field>
+    <div className="rounded-xl bg-white p-3 text-sm font-bold text-slate-700">
+      Type / 类型: <strong>{employmentType === 'part-time' ? 'PART-TIME WORKED HOURS / 兼职工时' : 'FULL-TIME OT / 全职加班'}</strong>
+    </div>
+    {error && <p className="sm:col-span-2 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
+    <div className="flex gap-2 sm:col-span-2">
+      <button type="button" className="flex-1 rounded-xl border bg-white p-3 font-bold" onClick={close}>Cancel</button>
+      <button disabled={saving || !employeeId || !hours} className="flex-1 rounded-xl bg-orange-500 p-3 font-black text-white disabled:opacity-40">{saving ? 'Saving...' : 'Save Manual Entry / 保存补录'}</button>
+    </div>
+  </form>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

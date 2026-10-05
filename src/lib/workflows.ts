@@ -30,6 +30,7 @@ export interface WorkAssignment {
   closedBy?: string;
   cancelledAt?: string;
   cancelledBy?: string;
+  manualEntry?: boolean;
 }
 
 export interface CorrectionHistoryItem {
@@ -168,6 +169,15 @@ export const isFullTimeOtSubmissionOpen = (
   assignment.date === singaporeDate && singaporeTime >= '20:00' && singaporeTime < '24:00'
 );
 
+export const isPartTimeWorkSubmissionOpen = (
+  employmentType: EmploymentType,
+  assignment: Pick<WorkAssignment, 'assignmentMode' | 'shiftType' | 'date'>,
+  singaporeDate: string,
+  singaporeTime: string
+): boolean => employmentType !== 'part-time' || assignment.assignmentMode !== 'work-shift' || assignment.shiftType !== 'PART_TIME_SHIFT' || (
+  assignment.date === singaporeDate && singaporeTime >= '17:00' && singaporeTime < '24:00'
+);
+
 export const deterministicSubmissionId = (assignmentId: string, employeeId: string) =>
   `${assignmentId}__${employeeId}`;
 
@@ -213,6 +223,9 @@ export function canEmployeeSubmit(input: {
   if (!isEmployeeEligibleForAssignment(employmentType, assignment.assignmentMode, assignment.shiftType ?? (employmentType === 'part-time' ? 'PART_TIME_SHIFT' : undefined))) return false;
   if (employmentType === 'full-time' && assignment.assignmentMode === 'ot-task') {
     return isFullTimeOtSubmissionOpen(employmentType, assignment, singaporeDate, singaporeTime);
+  }
+  if (employmentType === 'part-time' && assignment.assignmentMode === 'work-shift' && assignment.shiftType === 'PART_TIME_SHIFT') {
+    return isPartTimeWorkSubmissionOpen(employmentType, assignment, singaporeDate, singaporeTime);
   }
   return true;
 }

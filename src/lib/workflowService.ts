@@ -77,6 +77,12 @@ export const workflowService = {
   async lateSubmit(input: { assignmentId: string; employeeId: string; reason: string; otHours?: number; actualStart?: string; actualEnd?: string }): Promise<WorkSubmission> {
     return (await api<{ submission: WorkSubmission }>('/api/v13/submissions', { method: 'POST', body: JSON.stringify({ action: 'late-submit', ...input }) })).submission;
   },
+  async manualEntry(input: { employeeId: string; date: string; startTime: string; endTime: string; hours: number }): Promise<WorkSubmission> {
+    return (await api<{ submission: WorkSubmission }>('/api/v13/submissions', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'manual-entry', ...input })
+    })).submission;
+  },
   async correct(id: string, correction: { hours?: number; start?: string; end?: string; note: string }): Promise<WorkSubmission> {
     return (await api<{ submission: WorkSubmission }>('/api/v13/submissions', { method: 'PATCH', body: JSON.stringify({ id, ...correction }) })).submission;
   },

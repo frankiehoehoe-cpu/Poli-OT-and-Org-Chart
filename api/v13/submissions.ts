@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { commitServerDocuments, getServerDocument, listServerDocuments, updateServerDocument } from '../_firebaseAdmin.js';
 import { getV13Collections } from '../_v13Collections.js';
@@ -15,6 +16,7 @@ import {
   getSingaporeDate,
   getSingaporeTime,
   isFullTimeOtSubmissionOpen,
+  isPartTimeWorkSubmissionOpen,
   type WorkAssignment,
   type WorkSubmission
 } from '../../src/lib/workflows.js';
@@ -34,6 +36,99 @@ export default async function handler(request: Request, response: Response) {
           ? submissions.filter((submission) => submission.employeeId === session.employeeId)
           : submissions
       });
+    }
+
+    if (request.method === 'POST' && request.body?.action === 'manual-entry') {
+      const session = await requireV13Mutation(request, 'supervisor');
+      const employeeId = safeString(request.body?.employeeId, 128);
+      const date = safeString(request.body?.date, 10);
+      const startTime = safeString(request.body?.startTime, 5);
+      const endTime = safeString(request.body?.endTime, 5);
+      const hours = Number(request.body?.hours);
+      if (!employeeId || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime)) {
+        throw badRequest('Employee, date, start time and end time are required');
+      }
+      if (date > getSingaporeDate()) throw conflict('Supervisor manual entry cannot use a future date');
+
+      const employee = await getEffectiveEmployee(employeeId);
+      if (!employee || employee.role !== 'employee') throw Object.assign(new Error('Employee not found'), { statusCode: 404 });
+      const employmentType = getEmploymentType(employee);
+      const elapsedHours = calculateWorkedHours(startTime, endTime);
+      if (elapsedHours === null) throw badRequest('Start and end time are invalid');
+      const validHours = employmentType === 'full-time'
+        ? Number.isFinite(hours) && hours >= 0.5 && hours <= 12 && Number.isInteger(hours * 2)
+        : Number.isFinite(hours) && hours > 0 && hours <= 24 && Number.isInteger(hours * 4);
+      if (!validHours) throw badRequest(employmentType === 'full-time'
+        ? 'Full-Time OT hours must use 0.5-hour increments between 0.5 and 12'
+        : 'Part-Time worked hours must use 0.25-hour increments');
+      if (hours > elapsedHours) throw badRequest('Recorded hours cannot exceed the start/end time span');
+
+      const sameDaySubmissions = (await listServerDocuments<WorkSubmission>(collections.submissions))
+        .map((document) => document.data)
+        .filter((submission) => submission.employeeId === employeeId && submission.taskDate === date && submission.shiftTypeSnapshot !== 'SECOND_SHIFT');
+      if (sameDaySubmissions.length) throw conflict('A V1.3 record already exists for this employee/date. Use Correct instead');
+
+      const now = new Date().toISOString();
+      const assignmentId = randomUUID();
+      const submissionId = deterministicSubmissionId(assignmentId, employeeId);
+      const assignmentMode = employmentType === 'part-time' ? 'work-shift' as const : 'ot-task' as const;
+      const shiftType = employmentType === 'part-time' ? 'PART_TIME_SHIFT' as const : undefined;
+      const workstation = 'Supervisor Manual Entry / 主管补录';
+      const assignment: WorkAssignment = {
+        id: assignmentId,
+        date,
+        department: employee.department || 'Production',
+        workstation,
+        plannedStart: startTime,
+        plannedEnd: endTime,
+        taskType: 'non-output',
+        assignmentMode,
+        ...(shiftType ? { shiftType } : {}),
+        targetRequirement: 'Supervisor manual entry / 主管补录',
+        status: 'CLOSED',
+        assignedEmployeeIds: [employeeId],
+        createdBy: session.subject,
+        createdAt: now,
+        updatedAt: now,
+        revision: 1,
+        completionStatus: 'COMPLETED',
+        actualResult: 'Supervisor manual entry',
+        supervisorNote: 'Supervisor manual entry',
+        closedAt: now,
+        closedBy: session.subject,
+        manualEntry: true
+      };
+      const common = {
+        id: submissionId,
+        assignmentId,
+        employeeId,
+        employeeNameSnapshot: employee.name,
+        employmentTypeSnapshot: employmentType,
+        assignmentMode,
+        ...(shiftType ? { shiftTypeSnapshot: shiftType } : {}),
+        taskDate: date,
+        assignedWorkstation: workstation,
+        actualWorkstation: workstation,
+        submissionStatus: 'SUBMITTED' as const,
+        submittedAt: now,
+        createdAt: now,
+        updatedAt: now,
+        correctionHistory: [],
+        lateEntry: true,
+        enteredByRole: 'supervisor' as const,
+        enteredBy: session.subject,
+        lateEntryReason: 'Supervisor manual entry',
+        lateEnteredAt: now
+      };
+      const submission: WorkSubmission = employmentType === 'part-time'
+        ? { ...common, originalStart: startTime, originalEnd: endTime, originalWorkedHours: hours, effectiveWorkedHours: hours }
+        : { ...common, originalOtHours: hours, effectiveOtHours: hours };
+
+      await commitServerDocuments([
+        { collection: collections.assignments, id: assignmentId, data: assignment as unknown as Record<string, unknown>, exists: false },
+        { collection: collections.submissions, id: submissionId, data: submission as unknown as Record<string, unknown>, exists: false }
+      ]);
+      return response.status(201).json({ submission });
     }
 
     if (request.method === 'POST' && request.body?.action === 'late-submit') {
@@ -132,6 +227,14 @@ export default async function handler(request: Request, response: Response) {
           }
           if (!isFullTimeOtSubmissionOpen(employmentType, effectiveAssignment, singaporeDate, singaporeTime)) {
             throw conflict('Full-Time OT submission is only allowed from 20:00 to 23:59 Singapore time');
+          }
+        }
+        if (employmentType === 'part-time' && effectiveAssignment.assignmentMode === 'work-shift' && effectiveAssignment.shiftType === 'PART_TIME_SHIFT') {
+          if (effectiveAssignment.date !== singaporeDate) {
+            throw conflict('Part-Time worked hours are only allowed on the assigned Singapore date. Missed submissions require Supervisor late entry');
+          }
+          if (!isPartTimeWorkSubmissionOpen(employmentType, effectiveAssignment, singaporeDate, singaporeTime)) {
+            throw conflict('Part-Time worked hours are only allowed from 17:00 to 23:59 Singapore time');
           }
         }
         throw conflict('Submission is not permitted');

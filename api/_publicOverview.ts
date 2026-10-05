@@ -78,7 +78,7 @@ export async function buildPublicOverviewSnapshot(date = getSingaporeDate()): Pr
 
   const assignments: PublicAssignment[] = assignmentDocuments
     .map((document) => ({ ...document.data, id: document.id }))
-    .filter((assignment) => assignment.status !== 'CANCELLED')
+    .filter((assignment) => assignment.status !== 'CANCELLED' && !assignment.manualEntry)
     .map((assignment) => {
       const assignedTypes = assignment.assignedEmployeeIds
         .map((id) => employeeMap.get(id))
