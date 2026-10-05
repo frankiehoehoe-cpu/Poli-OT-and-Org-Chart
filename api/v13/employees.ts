@@ -27,6 +27,9 @@ export default async function handler(request: Request, response: Response) {
       const existing = await getEffectiveEmployee(id);
       if (!existing) return response.status(404).json({ error: 'EMPLOYEE_NOT_FOUND' });
       await setIsolatedEmploymentType(id, employmentType, session.subject);
+      await rebuildCurrentPublicOverview().catch((error) => {
+        console.error('Public overview refresh after isolated employee update failed', error instanceof Error ? error.message : error);
+      });
       return response.status(200).json({ employee: publicEmployee({ ...existing, employmentType }) });
     }
 
