@@ -193,6 +193,7 @@ export async function updateCurrentOverviewForSubmission(submission: WorkSubmiss
       found = true;
       return {
         ...assignment,
+        status: assignment.status === 'PLANNED' ? 'IN_PROGRESS' : assignment.status,
         participants: assignment.participants.map((participant) =>
           participant.employeeId === submission.employeeId
             ? { ...participant, status: 'SUBMITTED' as const, effectiveHours: effectiveHours(submission) }
