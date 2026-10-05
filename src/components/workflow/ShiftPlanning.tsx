@@ -8,16 +8,40 @@ export function PublicShiftNotices() {
   const [assignments, setAssignments] = useState<PublicAssignment[]>([]);
   const [publicDate, setPublicDate] = useState(getSingaporeDate());
 
-  useEffect(() => {
-    void Promise.all([
+  const load = useCallback(async () => {
+    const [nextNotices, overview] = await Promise.all([
       workflowService.notices().catch(() => [] as ShiftNotice[]),
       workflowService.publicOverview().catch(() => ({ date: getSingaporeDate(), assignments: [] as PublicAssignment[] }))
-    ]).then(([nextNotices, overview]) => {
-      setNotices(nextNotices);
-      setPublicDate(overview.date);
-      setAssignments(overview.assignments);
-    });
+    ]);
+    setNotices(nextNotices);
+    setPublicDate(overview.date);
+    setAssignments(overview.assignments);
   }, []);
+
+  useEffect(() => {
+    void load();
+
+    const intervalId = window.setInterval(() => {
+      void load();
+    }, 30000);
+
+    const refreshOnFocus = () => void load();
+    const refreshOnVisibility = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    const refreshOnWorkflowChange = () => void load();
+
+    window.addEventListener('focus', refreshOnFocus);
+    window.addEventListener('otpro-workflow-changed', refreshOnWorkflowChange);
+    document.addEventListener('visibilitychange', refreshOnVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshOnFocus);
+      window.removeEventListener('otpro-workflow-changed', refreshOnWorkflowChange);
+      document.removeEventListener('visibilitychange', refreshOnVisibility);
+    };
+  }, [load]);
 
   const secondShifts = assignments.filter((assignment) => assignment.shiftType === 'SECOND_SHIFT' && assignment.status !== 'CLOSED');
   const hourAssignments = assignments.filter((assignment) => assignment.shiftType !== 'SECOND_SHIFT' && assignment.date === publicDate);
