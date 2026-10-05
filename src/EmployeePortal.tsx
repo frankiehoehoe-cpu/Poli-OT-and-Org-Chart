@@ -134,8 +134,13 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
     setPasswordInput('');
     if (result.verified && await login()) {
       setIsUnlocked(true);
-      fetchEntries(selectedEmployee.id);
-      fetchPlans(selectedEmployee.id);
+      if (!OT_V13_ENABLED) {
+        fetchEntries(selectedEmployee.id);
+        fetchPlans(selectedEmployee.id);
+      } else {
+        setEntries([]);
+        setPlans([]);
+      }
       setError('');
     } else {
       setError(t('wrongPassword'));
@@ -839,8 +844,8 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
 
               </>}
 
-              {/* History Table */}
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print-area">
+              {/* Legacy History Table: hidden when V1.3 is active so employee devices use one authoritative data source only */}
+              {!OT_V13_ENABLED && <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print-area">
                 <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
                   <h3 className="text-lg font-bold text-slate-800">{t('dailyEntries')}</h3>
                   <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full">
@@ -976,7 +981,7 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
                     )}
                   </table>
                 </div>
-              </div>
+              </div>}
             </motion.div>
           )}
         </AnimatePresence>
