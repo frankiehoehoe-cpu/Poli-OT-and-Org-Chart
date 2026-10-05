@@ -178,15 +178,62 @@ export default function SupervisorPortal() {
       map.set(e.employeeId, existing);
     });
 
+    if (OT_V13_ENABLED) {
+      v13Aggregates.forEach((aggregate) => {
+        const existing = map.get(aggregate.employeeId) || {
+          employeeId: aggregate.employeeId,
+          employeeName: aggregate.employeeName,
+          unverifiedCount: 0,
+          totalHours: 0,
+          totalUnverifiedHours: 0
+        };
+        existing.employeeName = aggregate.employeeName;
+        existing.totalHours = aggregate.fullTimeOtHours + aggregate.partTimeWorkedHours;
+        map.set(aggregate.employeeId, existing);
+      });
+    }
+
     return Array.from(map.values())
       .filter(s => s.employeeName.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => b.unverifiedCount - a.unverifiedCount || b.totalHours - a.totalHours);
-  }, [entries, search, selectedMonth]);
+  }, [entries, search, selectedMonth, v13Aggregates]);
 
-  const selectedEmployeeName = entries.find(e => e.employeeId === selectedEmployeeId)?.employeeName;
+  const selectedEmployeeName =
+    employees.find(e => e.id === selectedEmployeeId)?.name ||
+    v13Submissions.find(e => e.employeeId === selectedEmployeeId)?.employeeNameSnapshot ||
+    entries.find(e => e.employeeId === selectedEmployeeId)?.employeeName;
+
+  const v13CoveredOtDates = useMemo(() => new Set(
+    v13Assignments
+      .filter(assignment =>
+        assignment.assignmentMode === 'ot-task' &&
+        assignment.status !== 'CANCELLED' &&
+        assignment.date.startsWith(selectedMonth) &&
+        Boolean(selectedEmployeeId && assignment.assignedEmployeeIds.includes(selectedEmployeeId))
+      )
+      .map(assignment => assignment.date)
+  ), [v13Assignments, selectedEmployeeId, selectedMonth]);
+
   const filteredDetailEntries = entries
-    .filter(e => e.employeeId === selectedEmployeeId && e.date.startsWith(selectedMonth))
+    .filter(e =>
+      e.employeeId === selectedEmployeeId &&
+      e.date.startsWith(selectedMonth) &&
+      !v13CoveredOtDates.has(e.date)
+    )
     .sort((a, b) => a.date.localeCompare(b.date));
+
+  const selectedV13Submissions = v13Submissions
+    .filter(submission =>
+      submission.employeeId === selectedEmployeeId &&
+      submission.taskDate.startsWith(selectedMonth) &&
+      submission.shiftTypeSnapshot !== 'SECOND_SHIFT'
+    )
+    .sort((a, b) => a.taskDate.localeCompare(b.taskDate));
+
+  const selectedAggregate = v13Aggregates.find((item) => item.employeeId === selectedEmployeeId);
+  const selectedEffectiveTotal = selectedAggregate
+    ? selectedAggregate.fullTimeOtHours + selectedAggregate.partTimeWorkedHours
+    : filteredDetailEntries.reduce((acc, curr) => acc + (curr.multiplier === 2.0 ? 0 : curr.totalHours), 0);
 
   const allApprovedForEmployee = useMemo(() => {
     if (!selectedEmployeeId) return false;
