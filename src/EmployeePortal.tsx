@@ -6,6 +6,7 @@ import { employeeService, overtimeService, planService } from './lib/services';
 import { UserProfile, OvertimeEntry, OvertimePlan } from './types';
 import { TaskWorkflow, WorkHistory } from './components/workflow/TaskWorkflow';
 import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
+import { FullTimeOtAvailability } from './components/workflow/FullTimeOtAvailability';
 import { getEmploymentType, getSingaporeDate } from './lib/workflows';
 import { OT_V13_ENABLED } from './lib/v13Flags';
 import { motion, AnimatePresence } from 'motion/react';
@@ -543,13 +544,15 @@ export default function EmployeePortal({ initialEmployee, onBack }: { initialEmp
               {OT_V13_ENABLED && <>
                 <TaskWorkflow role="employee" employees={employees} employeeId={selectedEmployee.id} />
                 <WorkHistory employeeId={selectedEmployee.id} month={singaporeMonth} />
-                {isPartTimeEmployee && (
+                {isPartTimeEmployee ? (
                   <PartTimeAvailabilityCalendar
                     mode="employee"
                     employees={employees}
                     month={singaporeMonth}
                     employeeId={selectedEmployee.id}
                   />
+                ) : (
+                  <FullTimeOtAvailability employeeId={selectedEmployee.id} />
                 )}
               </>}
               <div className="flex items-center justify-between no-print">
