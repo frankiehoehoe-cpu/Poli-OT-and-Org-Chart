@@ -6,12 +6,18 @@ import { getEffectiveEmployee, listEffectiveEmployees } from '../_v13Employees.j
 import { rebuildCurrentPublicOverview } from '../_publicOverview.js';
 import { requireSession } from '../_session.js';
 import { badRequest, conflict, requireV13Mutation, safeString, safeStringArray, sendApiError } from '../_v13.js';
-import { getEffectiveShiftType, getEmploymentType, getSingaporeDate, isEmployeeEligibleForAssignment, type AssignmentMode, type PartTimeAvailability, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
+import { getEffectiveShiftType, getEmploymentType, getSingaporeDate, isEmployeeEligibleForAssignment, type AssignmentMode, type FullTimeOtAvailability, type PartTimeAvailability, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
 
 const validDate = /^\d{4}-\d{2}-\d{2}$/;
 const validTime = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const availabilityId = (employeeId: string, date: string) => `${employeeId}__${date}`;
+
+const addCalendarDays = (date: string, days: number) => {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+};
 
 
 function assignmentInput(body: Record<string, unknown>, existing?: WorkAssignment): WorkAssignment {
@@ -76,6 +82,15 @@ export default async function handler(request: Request, response: Response) {
     const collections = getV13Collections();
     if (request.method === 'GET') {
       const session = await requireSession(request);
+      if (request.query?.resource === 'ft-availability') {
+        const items = (await listServerDocuments<FullTimeOtAvailability>(collections.fullTimeOtAvailability))
+          .map((document) => ({ ...document.data, id: document.id }));
+        return response.status(200).json({
+          availability: session.role === 'employee'
+            ? items.filter((item) => item.employeeId === session.employeeId)
+            : items
+        });
+      }
       if (request.query?.resource === 'availability') {
         const month = safeString(request.query?.month, 7);
         if (!/^\d{4}-\d{2}$/.test(month)) throw badRequest('Valid month is required');
@@ -94,6 +109,52 @@ export default async function handler(request: Request, response: Response) {
           ? assignments.filter((assignment) => session.employeeId && assignment.assignedEmployeeIds.includes(session.employeeId))
           : assignments
       });
+    }
+
+    if (request.method === 'POST' && request.body?.action === 'ft-availability-add') {
+      const session = await requireV13Mutation(request, 'employee');
+      if (!session.employeeId) throw Object.assign(new Error('Employee identity required'), { statusCode: 401 });
+      const employee = await getEffectiveEmployee(session.employeeId);
+      if (!employee || employee.role !== 'employee') throw Object.assign(new Error('Employee not found'), { statusCode: 404 });
+      if (getEmploymentType(employee) !== 'full-time') throw conflict('Only Full-Time employees can mark OT availability');
+
+      const date = safeString(request.body?.date, 10);
+      if (!validDate.test(date)) throw badRequest('Valid date is required');
+      const today = getSingaporeDate();
+      const lastAllowed = addCalendarDays(today, 6);
+      if (date < today || date > lastAllowed) throw conflict('Full-Time OT availability can only be planned for the next 7 Singapore calendar days');
+
+      const id = availabilityId(session.employeeId, date);
+      const existing = await getServerDocument<FullTimeOtAvailability>(collections.fullTimeOtAvailability, id);
+      if (existing) return response.status(200).json({ availability: { ...existing.data, id } });
+
+      const now = new Date().toISOString();
+      const availability: FullTimeOtAvailability = {
+        id,
+        employeeId: session.employeeId,
+        employeeNameSnapshot: employee.name,
+        date,
+        createdAt: now,
+        updatedAt: now
+      };
+      await createServerDocument(collections.fullTimeOtAvailability, id, availability as unknown as Record<string, unknown>);
+      return response.status(201).json({ availability });
+    }
+
+    if (request.method === 'DELETE' && request.body?.action === 'ft-availability-remove') {
+      const session = await requireV13Mutation(request, 'employee');
+      if (!session.employeeId) throw Object.assign(new Error('Employee identity required'), { statusCode: 401 });
+      const date = safeString(request.body?.date, 10);
+      if (!validDate.test(date)) throw badRequest('Valid date is required');
+
+      const id = availabilityId(session.employeeId, date);
+      const document = await getServerDocument<FullTimeOtAvailability>(collections.fullTimeOtAvailability, id);
+      if (!document) return response.status(200).json({ deleted: true });
+      if (document.data.employeeId !== session.employeeId) throw conflict('OT availability belongs to another employee');
+      if (date < getSingaporeDate()) throw conflict('Past OT availability cannot be removed');
+
+      await deleteServerDocument(collections.fullTimeOtAvailability, id, document.updateTime);
+      return response.status(200).json({ deleted: true });
     }
 
     if (request.method === 'POST' && request.body?.action === 'availability-add') {
