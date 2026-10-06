@@ -110,6 +110,15 @@ export interface PartTimeAvailability {
   updatedAt: string;
 }
 
+export interface FullTimeOtAvailability {
+  id: string;
+  employeeId: string;
+  employeeNameSnapshot: string;
+  date: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LegacyOtRecord {
   id: string;
   employeeId: string;
