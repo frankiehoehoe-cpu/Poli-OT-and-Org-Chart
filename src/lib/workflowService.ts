@@ -25,10 +25,11 @@ export interface PublicAssignment {
 }
 
 export interface PublicOverviewResponse {
-  schemaVersion: 1;
+  schemaVersion: 2;
   date: string;
   assignments: PublicAssignment[];
   notices: ShiftNotice[];
+  fullTimeOtAvailability: FullTimeOtAvailability[];
   updatedAt: string;
   realtime: {
     collection: string;
