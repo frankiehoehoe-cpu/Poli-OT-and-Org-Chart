@@ -69,6 +69,36 @@ async function validateAssignedEmployees(ids: string[], mode: AssignmentMode, sh
   }
 }
 
+async function validateNoDuplicateDailyAssignments(
+  collectionName: string,
+  employeeIds: string[],
+  date: string,
+  excludeAssignmentId?: string
+) {
+  const requested = new Set(employeeIds);
+  const conflicts = (await listServerDocuments<WorkAssignment>(collectionName))
+    .map((document) => ({ ...document.data, id: document.id }))
+    .filter((assignment) =>
+      assignment.id !== excludeAssignmentId &&
+      assignment.date === date &&
+      assignment.status !== 'CANCELLED' &&
+      assignment.assignedEmployeeIds.some((employeeId) => requested.has(employeeId))
+    );
+
+  if (!conflicts.length) return;
+
+  const conflictingIds = new Set(
+    conflicts.flatMap((assignment) => assignment.assignedEmployeeIds.filter((employeeId) => requested.has(employeeId)))
+  );
+  const employees = await listEffectiveEmployees();
+  const names = employees
+    .filter((employee) => conflictingIds.has(employee.id))
+    .map((employee) => employee.name)
+    .sort((a, b) => a.localeCompare(b));
+
+  throw conflict(`Employee already assigned on ${date}: ${names.join(', ') || [...conflictingIds].join(', ')}`);
+}
+
 async function resolveLegacyShiftType(assignment: WorkAssignment): Promise<WorkAssignment> {
   if (assignment.assignmentMode !== 'work-shift' || assignment.shiftType) return assignment;
   const employees = await listEffectiveEmployees();
@@ -203,6 +233,7 @@ export default async function handler(request: Request, response: Response) {
       const now = new Date().toISOString();
       const assignment = assignmentInput(request.body || {});
       await validateAssignedEmployees(assignment.assignedEmployeeIds, assignment.assignmentMode, assignment.shiftType);
+      await validateNoDuplicateDailyAssignments(collections.assignments, assignment.assignedEmployeeIds, assignment.date);
       const created: WorkAssignment = { ...assignment, createdBy: session.subject, createdAt: now, updatedAt: now, revision: 1 };
       await createServerDocument(collections.assignments, created.id, created as unknown as Record<string, unknown>);
       await rebuildCurrentPublicOverview().catch((error) => {
@@ -231,6 +262,7 @@ export default async function handler(request: Request, response: Response) {
         if (submissions.length && (updated.date !== assignment.date || updated.assignmentMode !== assignment.assignmentMode || updated.shiftType !== assignment.shiftType)) throw conflict('Date, mode and shift type are locked after submission');
         if ([...submittedIds].some((employeeId) => !updated.assignedEmployeeIds.includes(employeeId))) throw conflict('Submitted employee cannot be removed');
         await validateAssignedEmployees(updated.assignedEmployeeIds, updated.assignmentMode, updated.shiftType);
+        await validateNoDuplicateDailyAssignments(collections.assignments, updated.assignedEmployeeIds, updated.date, assignment.id);
       } else if (action === 'cancel') {
         if (submissions.length) throw conflict('Assignment with submissions cannot be cancelled');
         if (assignment.status === 'CLOSED') throw conflict('Closed assignment cannot be cancelled');
