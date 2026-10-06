@@ -17,6 +17,7 @@ import {
   getSingaporeTime,
   isFullTimeOtSubmissionOpen,
   isPartTimeWorkSubmissionOpen,
+  type PartTimeAvailability,
   type WorkAssignment,
   type WorkSubmission
 } from '../../src/lib/workflows.js';
@@ -36,6 +37,149 @@ export default async function handler(request: Request, response: Response) {
           ? submissions.filter((submission) => submission.employeeId === session.employeeId)
           : submissions
       });
+    }
+
+    if (request.method === 'POST' && request.body?.action === 'part-time-self-submit') {
+      const session = await requireV13Mutation(request, 'employee');
+      if (!session.employeeId) throw Object.assign(new Error('Employee identity required'), { statusCode: 401 });
+
+      const employee = await getEffectiveEmployee(session.employeeId);
+      if (!employee || employee.role !== 'employee') throw Object.assign(new Error('Employee not found'), { statusCode: 404 });
+      if (getEmploymentType(employee) !== 'part-time') throw conflict('Only Part-Time employees can use availability self submission');
+
+      const singaporeDate = getSingaporeDate();
+      const singaporeTime = getSingaporeTime();
+      const date = safeString(request.body?.date, 10);
+      const actualStart = safeString(request.body?.actualStart, 5);
+      const actualEnd = safeString(request.body?.actualEnd, 5);
+
+      if (date !== singaporeDate) throw conflict('Part-Time worked hours can only be submitted for today');
+      if (singaporeTime < '17:00' || singaporeTime >= '24:00') {
+        throw conflict('Part-Time worked hours are only allowed from 17:00 to 23:59 Singapore time');
+      }
+
+      const availabilityId = `${session.employeeId}__${date}`;
+      const availability = await getServerDocument<PartTimeAvailability>(collections.partTimeAvailability, availabilityId);
+      if (!availability) throw conflict('Today is not marked as an available Part-Time work day');
+
+      const workedHours = calculateWorkedHours(actualStart, actualEnd);
+      if (workedHours === null) throw badRequest('Actual start and end are invalid');
+
+      const existingDaySubmissions = (await listServerDocuments<WorkSubmission>(collections.submissions))
+        .map((document) => ({ ...document.data, id: document.id }))
+        .filter((submission) =>
+          submission.employeeId === session.employeeId &&
+          submission.taskDate === date &&
+          submission.shiftTypeSnapshot !== 'SECOND_SHIFT'
+        );
+      if (existingDaySubmissions.length) throw conflict('A Part-Time worked-hours record already exists for today');
+
+      const existingAssignments = (await listServerDocuments<WorkAssignment>(collections.assignments))
+        .map((document) => ({ ...document.data, id: document.id }))
+        .filter((assignment) =>
+          assignment.date === date &&
+          assignment.assignmentMode === 'work-shift' &&
+          assignment.shiftType === 'PART_TIME_SHIFT' &&
+          assignment.status !== 'CANCELLED' &&
+          assignment.assignedEmployeeIds.includes(session.employeeId!)
+        );
+
+      const now = new Date().toISOString();
+      const existingAssignment = existingAssignments[0];
+
+      if (existingAssignment) {
+        const id = deterministicSubmissionId(existingAssignment.id, session.employeeId);
+        const submission: WorkSubmission = {
+          id,
+          assignmentId: existingAssignment.id,
+          employeeId: session.employeeId,
+          employeeNameSnapshot: employee.name,
+          employmentTypeSnapshot: 'part-time',
+          assignmentMode: 'work-shift',
+          shiftTypeSnapshot: 'PART_TIME_SHIFT',
+          taskDate: date,
+          assignedWorkstation: existingAssignment.workstation,
+          actualWorkstation: existingAssignment.workstation,
+          submissionStatus: 'SUBMITTED',
+          submittedAt: now,
+          createdAt: now,
+          updatedAt: now,
+          correctionHistory: [],
+          originalStart: actualStart,
+          originalEnd: actualEnd,
+          originalWorkedHours: workedHours,
+          effectiveWorkedHours: workedHours
+        };
+        const updatedAssignment: WorkAssignment = {
+          ...existingAssignment,
+          status: existingAssignment.status === 'PLANNED' ? 'IN_PROGRESS' : existingAssignment.status,
+          updatedAt: now,
+          revision: existingAssignment.revision + 1
+        };
+        await commitServerDocuments([
+          { collection: collections.submissions, id, data: submission as unknown as Record<string, unknown>, exists: false },
+          { collection: collections.assignments, id: existingAssignment.id, data: updatedAssignment as unknown as Record<string, unknown> }
+        ]);
+        await updateCurrentOverviewForSubmission(submission).catch((error) => {
+          console.error('Public overview refresh after Part-Time self submission failed', error instanceof Error ? error.message : error);
+        });
+        return response.status(201).json({ submission });
+      }
+
+      const assignmentId = randomUUID();
+      const submissionId = deterministicSubmissionId(assignmentId, session.employeeId);
+      const workstation = 'Part-Time Work / 兼职工作';
+      const assignment: WorkAssignment = {
+        id: assignmentId,
+        date,
+        department: employee.department || 'Production',
+        workstation,
+        plannedStart: actualStart,
+        plannedEnd: actualEnd,
+        taskType: 'non-output',
+        assignmentMode: 'work-shift',
+        shiftType: 'PART_TIME_SHIFT',
+        targetRequirement: 'Employee self submission from approved availability / 员工按已计划可上班日自行填写',
+        status: 'CLOSED',
+        assignedEmployeeIds: [session.employeeId],
+        createdBy: session.employeeId,
+        createdAt: now,
+        updatedAt: now,
+        revision: 1,
+        completionStatus: 'COMPLETED',
+        actualResult: 'Part-Time worked hours submitted',
+        supervisorNote: 'Auto-created because Supervisor had not scheduled the available day',
+        closedAt: now,
+        closedBy: session.employeeId,
+        manualEntry: true
+      };
+      const submission: WorkSubmission = {
+        id: submissionId,
+        assignmentId,
+        employeeId: session.employeeId,
+        employeeNameSnapshot: employee.name,
+        employmentTypeSnapshot: 'part-time',
+        assignmentMode: 'work-shift',
+        shiftTypeSnapshot: 'PART_TIME_SHIFT',
+        taskDate: date,
+        assignedWorkstation: workstation,
+        actualWorkstation: workstation,
+        submissionStatus: 'SUBMITTED',
+        submittedAt: now,
+        createdAt: now,
+        updatedAt: now,
+        correctionHistory: [],
+        originalStart: actualStart,
+        originalEnd: actualEnd,
+        originalWorkedHours: workedHours,
+        effectiveWorkedHours: workedHours
+      };
+
+      await commitServerDocuments([
+        { collection: collections.assignments, id: assignmentId, data: assignment as unknown as Record<string, unknown>, exists: false },
+        { collection: collections.submissions, id: submissionId, data: submission as unknown as Record<string, unknown>, exists: false }
+      ]);
+      return response.status(201).json({ submission });
     }
 
     if (request.method === 'POST' && request.body?.action === 'manual-entry') {

@@ -285,7 +285,7 @@ export default function SupervisorPortal() {
         {OT_V13_ENABLED && <>
           <TaskWorkflow role="supervisor" employees={employees} />
           <PartTimeAvailabilityCalendar
-            mode="readonly"
+            mode="supervisor"
             employees={employees}
             month={selectedMonth}
             title="Part-Time Planning / 兼职排班计划"
