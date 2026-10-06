@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
+import { doc, onSnapshot, type Unsubscribe } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from './lib/LanguageContext';
 import { useAuth } from './lib/AuthContext';
-import { employeeService, overtimeService, planService, orgChartService } from './lib/services';
-import { UserProfile, OvertimeEntry, OvertimePlan } from './types';
-import { formatDate, formatDateWithDay } from './lib/dateUtils';
+import { employeeService, overtimeService, orgChartService } from './lib/services';
+import { UserProfile, OvertimeEntry } from './types';
+import { formatDateWithDay } from './lib/dateUtils';
 import { 
   Users, 
   LogIn, 
@@ -15,8 +16,6 @@ import {
   TrendingUp,
   Briefcase,
   Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight as ChevronRightIcon,
   CalendarClock,
   X
 } from 'lucide-react';
@@ -25,6 +24,9 @@ import EmployeePortal from './EmployeePortal';
 import OrgChart from './components/OrgChart';
 import { PublicShiftNotices } from './components/workflow/ShiftPlanning';
 import { OT_V13_ENABLED } from './lib/v13Flags';
+import { db } from './lib/firebase';
+import { workflowService, type PublicOverviewResponse } from './lib/workflowService';
+import { getSingaporeDate, type FullTimeOtAvailability } from './lib/workflows';
 
 export default function LandingPage() {
   const { t, language, setLanguage } = useTranslation();
@@ -32,7 +34,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const [employees, setEmployees] = useState<UserProfile[]>([]);
   const [entries, setEntries] = useState<OvertimeEntry[]>([]);
-  const [plans, setPlans] = useState<OvertimePlan[]>([]);
+  const [fullTimeOtAvailability, setFullTimeOtAvailability] = useState<FullTimeOtAvailability[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<UserProfile | null>(null);
@@ -40,24 +42,53 @@ export default function LandingPage() {
   const [showOrgChartPublic, setShowOrgChartPublic] = useState(false);
 
   useEffect(() => {
+    let unsubscribeOverview: Unsubscribe | undefined;
+    let stopped = false;
+
     async function fetchData() {
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const emps = await employeeService.getAllEmployees();
-      const docs = await overtimeService.getAllEntries(currentMonth);
-      const mPlans = await planService.getAllPlansForMonth(currentMonth);
+      const currentMonth = getSingaporeDate().slice(0, 7);
+      const [emps, docs, overview] = await Promise.all([
+        employeeService.getAllEmployees(),
+        overtimeService.getAllEntries(currentMonth),
+        workflowService.publicOverview()
+      ]);
+
+      if (stopped) return;
+
+      setEmployees(emps);
+      setEntries(docs);
+      setFullTimeOtAvailability(overview.fullTimeOtAvailability || []);
+
       try {
         const settings = await orgChartService.getSettings();
-        setShowOrgChartPublic(settings.showInPublicView);
+        if (!stopped) setShowOrgChartPublic(settings.showInPublicView);
       } catch (e) {
         console.error('Failed to get public org chart setting', e);
       }
-      
-      setEmployees(emps);
-      setEntries(docs);
-      setPlans(mPlans);
+
+      const overviewRef = doc(db, overview.realtime.collection, overview.realtime.documentId);
+      unsubscribeOverview = onSnapshot(
+        overviewRef,
+        (snapshot) => {
+          if (!snapshot.exists()) return;
+          const data = snapshot.data() as Pick<PublicOverviewResponse, 'fullTimeOtAvailability'>;
+          setFullTimeOtAvailability(data.fullTimeOtAvailability || []);
+        },
+        (error) => console.error('Public availability realtime listener failed', error)
+      );
+
       setIsLoading(false);
     }
-    fetchData();
+
+    void fetchData().catch((error) => {
+      console.error('Failed to load public overview', error);
+      setIsLoading(false);
+    });
+
+    return () => {
+      stopped = true;
+      unsubscribeOverview?.();
+    };
   }, []);
 
   const getCumulativeHours = (empId: string) => {
@@ -66,66 +97,24 @@ export default function LandingPage() {
       .reduce((acc, curr) => acc + curr.totalHours, 0);
   };
 
-  // Calendar Helpers
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
+  // Calendar Helpers — V1.3 Full-Time employee OT availability
+  const singaporeToday = getSingaporeDate();
+  const [calendarYear, calendarMonthNumber] = singaporeToday.split('-').map(Number);
+  const year = calendarYear;
+  const month = calendarMonthNumber - 1;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayOfMonth = new Date(year, month, 1).getDay();
 
   const calendarDays = Array.from({ length: daysInMonth }, (_, i) => {
     const day = i + 1;
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const dayPlans = plans.filter(p => p.date === dateStr);
+    const dayPlans = fullTimeOtAvailability.filter((item) => item.date === dateStr);
     return { day, dateStr, dayPlans };
   });
 
-  const monthName = today.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', { month: 'long' });
+  const monthName = new Date(year, month, 1).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', { month: 'long' });
 
-  const getPlanStatus = (plan: OvertimePlan) => {
-    // 1. Get current local date and time
-    const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const currentHour = now.getHours();
-
-    // 2. Check if a valid log exists for this plan's date
-    // ONLY turn green if it's already VERIFIED (approved by supervisor)
-    const hasLog = entries.some(e => e.date === plan.date && e.employeeId === plan.employeeId && e.status === 'verified');
-    
-    // 3. Parse planning creation date
-    const createdDate = plan.createdAt?.toDate ? plan.createdAt.toDate() : (plan.createdAt ? new Date(plan.createdAt) : null);
-    if (!createdDate) return 'pending';
-
-    const createdDayStr = `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, '0')}-${String(createdDate.getDate()).padStart(2, '0')}`;
-    const createdHour = createdDate.getHours();
-
-    // 4. Calculate if on-time: Planned BEFORE the day OR on the day before 18:00
-    let isOnTime = false;
-    if (createdDayStr < plan.date) {
-      isOnTime = true;
-    } else if (createdDayStr === plan.date) {
-      isOnTime = createdHour < 18;
-    }
-
-    // Success (Green): Must have BOTH a valid log AND an on-time plan
-    if (hasLog && isOnTime) return 'success';
-    
-    // Error (Red) - Only trigger for late/missed past deadlines:
-    // - Overtime date is in the past (before today)
-    // - Overtime date is today and it's already past 18:00 (deadline passed)
-    const isPastDate = plan.date < todayStr;
-    const isTodayPastDeadline = plan.date === todayStr && currentHour >= 18;
-
-    if (isPastDate || isTodayPastDeadline) {
-      // If deadline passed and we either have no log or plan was late
-      if (!hasLog || !isOnTime) return 'error';
-    }
-
-    // Otherwise (Today before 18:00 or Future): Status is still pending/waiting
-    return 'pending';
-  };
-
-  const selectedDatePlans = plans.filter(p => p.date === selectedCalendarDate);
+  const selectedDatePlans = fullTimeOtAvailability.filter((item) => item.date === selectedCalendarDate);
 
   if (isLoading) {
     return (
@@ -222,7 +211,7 @@ export default function LandingPage() {
                   <div key={`empty-${i}`} className="aspect-square"></div>
                 ))}
                 {calendarDays.map(({ day, dateStr, dayPlans }) => {
-                  const isToday = dateStr === new Date().toISOString().split('T')[0];
+                  const isToday = dateStr === singaporeToday;
                   return (
                     <button
                       key={dateStr}
@@ -390,37 +379,25 @@ export default function LandingPage() {
               <div className="p-10 space-y-4 max-h-[400px] overflow-y-auto">
                 {selectedDatePlans.length > 0 ? (
                   <div className="grid gap-3">
-                    {selectedDatePlans.map((plan, idx) => {
-                      const status = getPlanStatus(plan);
-                      return (
-                        <motion.div 
-                          key={plan.id}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: idx * 0.05 }}
-                          className={`flex items-center gap-4 p-4 rounded-2xl border group transition-colors ${
-                            status === 'success' ? 'bg-emerald-50 border-emerald-100' :
-                            status === 'error' ? 'bg-red-50 border-red-100' :
-                            'bg-slate-50 border-slate-100 hover:bg-amber-50 hover:border-amber-100'
-                          }`}
-                        >
-                          <div className={`w-10 h-10 rounded-xl bg-white border flex items-center justify-center transition-all ${
-                            status === 'success' ? 'text-emerald-500 border-emerald-200' :
-                            status === 'error' ? 'text-red-500 border-red-200' :
-                            'text-slate-400 group-hover:text-amber-500 group-hover:border-amber-200 border-slate-200'
-                          }`}>
-                            <Users className="w-5 h-5" />
-                          </div>
-                          <span className={`font-black text-lg uppercase tracking-tight ${
-                            status === 'success' ? 'text-emerald-900' :
-                            status === 'error' ? 'text-red-900' :
-                            'text-slate-900 group-hover:text-amber-900'
-                          }`} translate="no">
-                            {plan.employeeName}
+                    {selectedDatePlans.map((plan, idx) => (
+                      <motion.div 
+                        key={plan.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.05 }}
+                        className="flex items-center gap-4 rounded-2xl border border-amber-100 bg-amber-50 p-4"
+                      >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-200 bg-white text-amber-500">
+                          <Users className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <span className="text-lg font-black uppercase tracking-tight text-slate-900" translate="no">
+                            {plan.employeeNameSnapshot}
                           </span>
-                        </motion.div>
-                      );
-                    })}
+                          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">AVAILABLE FOR OT / 已计划可加班</p>
+                        </div>
+                      </motion.div>
+                    ))}
                   </div>
                 ) : (
                   <div className="text-center py-12">

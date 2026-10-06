@@ -168,6 +168,9 @@ export default async function handler(request: Request, response: Response) {
         updatedAt: now
       };
       await createServerDocument(collections.fullTimeOtAvailability, id, availability as unknown as Record<string, unknown>);
+      await rebuildCurrentPublicOverview().catch((error) => {
+        console.error('Public overview refresh after FT availability add failed', error instanceof Error ? error.message : error);
+      });
       return response.status(201).json({ availability });
     }
 
@@ -184,6 +187,9 @@ export default async function handler(request: Request, response: Response) {
       if (date < getSingaporeDate()) throw conflict('Past OT availability cannot be removed');
 
       await deleteServerDocument(collections.fullTimeOtAvailability, id, document.updateTime);
+      await rebuildCurrentPublicOverview().catch((error) => {
+        console.error('Public overview refresh after FT availability remove failed', error instanceof Error ? error.message : error);
+      });
       return response.status(200).json({ deleted: true });
     }
 

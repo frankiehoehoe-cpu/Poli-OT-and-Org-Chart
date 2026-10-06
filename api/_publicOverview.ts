@@ -6,6 +6,7 @@ import {
   getEmploymentType,
   getSingaporeDate,
   isEmployeeEligibleForAssignment,
+  type FullTimeOtAvailability,
   type ShiftNotice,
   type ShiftType,
   type WorkAssignment,
@@ -37,10 +38,11 @@ export interface PublicAssignment {
 }
 
 export interface PublicOverviewSnapshot {
-  schemaVersion: 1;
+  schemaVersion: 2;
   date: string;
   assignments: PublicAssignment[];
   notices: ShiftNotice[];
+  fullTimeOtAvailability: FullTimeOtAvailability[];
   updatedAt: string;
 }
 
@@ -61,11 +63,12 @@ function effectiveHours(submission: WorkSubmission): number {
 export async function buildPublicOverviewSnapshot(date = getSingaporeDate()): Promise<PublicOverviewSnapshot> {
   const collections = getV13Collections();
   const secondShiftPreviewEnd = addCalendarDays(date, 2);
-  const [assignmentDocuments, submissionDocuments, employees, noticeDocuments] = await Promise.all([
+  const [assignmentDocuments, submissionDocuments, employees, noticeDocuments, fullTimeAvailabilityDocuments] = await Promise.all([
     listServerDocuments<WorkAssignment>(collections.assignments),
     listServerDocuments<WorkSubmission>(collections.submissions),
     listEffectiveEmployees(),
-    listServerDocuments<ShiftNotice>(collections.shiftNotices)
+    listServerDocuments<ShiftNotice>(collections.shiftNotices),
+    listServerDocuments<FullTimeOtAvailability>(collections.fullTimeOtAvailability)
   ]);
 
   const employeeMap = new Map(employees.map((employee) => [employee.id, employee]));
@@ -131,11 +134,16 @@ export async function buildPublicOverviewSnapshot(date = getSingaporeDate()): Pr
       date <= notice.effectiveEndDate
     );
 
+  const fullTimeOtAvailability = fullTimeAvailabilityDocuments
+    .map((document) => ({ ...document.data, id: document.id }))
+    .filter((item) => item.date >= date);
+
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     date,
     assignments,
     notices,
+    fullTimeOtAvailability,
     updatedAt: new Date().toISOString()
   };
 }
@@ -180,7 +188,7 @@ export async function ensureCurrentPublicOverview(): Promise<PublicOverviewSnaps
   const collections = getV13Collections();
   const today = getSingaporeDate();
   const existing = await getServerDocument<PublicOverviewSnapshot>(collections.publicOverview, SNAPSHOT_ID);
-  if (existing?.data?.date === today && existing.data.schemaVersion === 1) {
+  if (existing?.data?.date === today && existing.data.schemaVersion === 2) {
     return { ...existing.data, date: today };
   }
   return rebuildCurrentPublicOverview();
@@ -194,7 +202,7 @@ export async function updateCurrentOverviewForSubmission(submission: WorkSubmiss
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const current = await getServerDocument<PublicOverviewSnapshot>(collections.publicOverview, SNAPSHOT_ID);
-    if (!current || current.data.date !== today || current.data.schemaVersion !== 1) {
+    if (!current || current.data.date !== today || current.data.schemaVersion !== 2) {
       await rebuildCurrentPublicOverview();
       return;
     }
