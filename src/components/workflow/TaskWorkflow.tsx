@@ -131,7 +131,7 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
       </div>}
     </div>
     {error && <p className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
-    {editing !== undefined && <AssignmentEditor employees={employees} availability={availability} fullTimeAvailability={fullTimeAvailability} assignment={editing} close={() => setEditing(undefined)} saved={async () => { setEditing(undefined); await load(); notifyWorkflowChanged(); }} />}
+    {editing !== undefined && <AssignmentEditor employees={employees} assignments={assignments} availability={availability} fullTimeAvailability={fullTimeAvailability} assignment={editing} close={() => setEditing(undefined)} saved={async () => { setEditing(undefined); await load(); notifyWorkflowChanged(); }} />}
 
     {role === 'supervisor' && showManualEntry && <SupervisorManualEntry
       employees={employees}
@@ -161,14 +161,25 @@ export function TaskWorkflow({ role, employees, employeeId }: { role: Role; empl
   </section>;
 }
 
-function AssignmentEditor({ employees, availability, fullTimeAvailability, assignment, close, saved }: { employees: UserProfile[]; availability: PartTimeAvailability[]; fullTimeAvailability: FullTimeOtAvailability[]; assignment: WorkAssignment | null; close: () => void; saved: () => Promise<void> }) {
+function AssignmentEditor({ employees, assignments, availability, fullTimeAvailability, assignment, close, saved }: { employees: UserProfile[]; assignments: WorkAssignment[]; availability: PartTimeAvailability[]; fullTimeAvailability: FullTimeOtAvailability[]; assignment: WorkAssignment | null; close: () => void; saved: () => Promise<void> }) {
   const [mode, setMode] = useState(assignment?.assignmentMode || 'ot-task');
   const [shiftType, setShiftType] = useState<ShiftType>(assignment?.shiftType || 'SECOND_SHIFT');
   const [selected, setSelected] = useState<string[]>(assignment?.assignedEmployeeIds || []);
   const [form, setForm] = useState({ date: assignment?.date || getSingaporeDate(), department: assignment?.department || 'Production', workstation: assignment?.workstation || workstations[7], product: assignment?.product || '', batchNo: assignment?.batchNo || '', plannedStart: assignment?.plannedStart || '18:00', plannedEnd: assignment?.plannedEnd || '21:00', targetRequirement: assignment?.targetRequirement || '' });
   const [error, setError] = useState('');
+  const occupiedOnDate = (employeeId: string, targetDate = form.date) =>
+    assignments.some((item) =>
+      item.id !== assignment?.id &&
+      item.date === targetDate &&
+      item.status !== 'CANCELLED' &&
+      item.assignedEmployeeIds.includes(employeeId)
+    );
+
   const eligible = employees
-    .filter((employee) => isEmployeeEligibleForAssignment(getEmploymentType(employee), mode, mode === 'work-shift' ? shiftType : undefined))
+    .filter((employee) =>
+      isEmployeeEligibleForAssignment(getEmploymentType(employee), mode, mode === 'work-shift' ? shiftType : undefined) &&
+      !occupiedOnDate(employee.id)
+    )
     .sort((a, b) => {
       if (mode !== 'ot-task') return 0;
       const aAvailable = fullTimeAvailability.some((item) => item.employeeId === a.id && item.date === form.date);
@@ -183,12 +194,16 @@ function AssignmentEditor({ employees, availability, fullTimeAvailability, assig
   return <form onSubmit={submit} className="grid gap-3 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2">
     <label className="text-sm font-bold">Assignment Type<select className="mt-1 w-full rounded-xl border p-3" value={mode} disabled={Boolean(assignment)} onChange={(event) => { const nextMode = event.target.value as 'ot-task' | 'work-shift'; setMode(nextMode); setShiftType('SECOND_SHIFT'); setSelected([]); }}><option value="ot-task">OT Task</option><option value="work-shift">Work Shift</option></select></label>
     {mode === 'work-shift' && <label className="text-sm font-bold">Shift Type / 班次类型<select className="mt-1 w-full rounded-xl border p-3" value={shiftType} disabled={assignment?.shiftType === 'PART_TIME_SHIFT'} onChange={(event) => { setShiftType(event.target.value as ShiftType); setSelected([]); }}>{assignment?.shiftType === 'PART_TIME_SHIFT' ? <option value="PART_TIME_SHIFT">Part-Time Shift / 请在兼职排班计划管理</option> : <option value="SECOND_SHIFT">2nd Shift / 中班</option>}</select></label>}
-    <Field label="Date"><input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })}/></Field>
+    <Field label="Date"><input type="date" value={form.date} onChange={(event) => {
+      const nextDate = event.target.value;
+      setForm({ ...form, date: nextDate });
+      setSelected((current) => current.filter((employeeId) => !occupiedOnDate(employeeId, nextDate)));
+    }}/></Field>
     <Field label="Department"><input value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })}/></Field>
     <label className="text-sm font-bold">Workstation<select className="mt-1 w-full rounded-xl border p-3" value={form.workstation} onChange={(event) => setForm({ ...form, workstation: event.target.value })}>{workstations.map((station) => <option key={station}>{station}</option>)}</select></label>
     <Field label="Planned Start"><input type="time" value={form.plannedStart} onChange={(event) => setForm({ ...form, plannedStart: event.target.value })}/></Field>
     <Field label="Planned End"><input type="time" value={form.plannedEnd} onChange={(event) => setForm({ ...form, plannedEnd: event.target.value })}/></Field>
-    <div className="sm:col-span-2"><Field label="Requirement"><textarea required value={form.targetRequirement} onChange={(event) => setForm({ ...form, targetRequirement: event.target.value })}/></Field><p className="mt-3 text-sm font-black">ASSIGNED EMPLOYEES</p>{eligible.map((employee) => {
+    <div className="sm:col-span-2"><Field label="Requirement"><textarea required value={form.targetRequirement} onChange={(event) => setForm({ ...form, targetRequirement: event.target.value })}/></Field><p className="mt-3 text-sm font-black">ASSIGNED EMPLOYEES</p><p className="mb-2 text-xs font-bold text-slate-500">Employees already assigned to another task on this date are hidden / 当天已被其他任务安排的员工不会重复显示</p>{eligible.map((employee) => {
       const partTimeAvailabilityMarked = mode === 'work-shift' && shiftType === 'PART_TIME_SHIFT'
         ? availability.some((item) => item.employeeId === employee.id && item.date === form.date)
         : false;
