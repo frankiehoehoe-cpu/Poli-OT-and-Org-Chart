@@ -413,6 +413,94 @@ export default function ManagerPortal() {
     setSummaries(Array.from(summaryMap.values()));
   };
 
+  const selectedReportRows = React.useMemo(() => {
+    if (!selectedEmployeeSummary) return [];
+
+    const employeeId = selectedEmployeeSummary.employeeId;
+    const assignmentById = new Map(v13Assignments.map((assignment) => [assignment.id, assignment]));
+    const authoritativeV13Days = new Set(
+      v13Assignments
+        .filter((assignment) =>
+          assignment.date.startsWith(selectedMonth) &&
+          assignment.status !== 'CANCELLED' &&
+          assignment.shiftType !== 'SECOND_SHIFT' &&
+          assignment.assignedEmployeeIds.includes(employeeId)
+        )
+        .map((assignment) => assignment.date)
+    );
+
+    const legacyRows = entries
+      .filter((entry) =>
+        entry.employeeId === employeeId &&
+        entry.date.startsWith(selectedMonth) &&
+        entry.multiplier !== 2.0 &&
+        !authoritativeV13Days.has(entry.date)
+      )
+      .map((entry) => ({
+        id: entry.id,
+        source: 'legacy' as const,
+        date: entry.date,
+        startTime: entry.startTime,
+        endTime: entry.endTime,
+        totalHours: entry.totalHours,
+        typeLabel: entry.multiplier === 2.0 ? '2.0' : '1.5 (Legacy)',
+        verified: entry.verified,
+        status: entry.status,
+        statusLabel: entry.verified ? 'VERIFIED / 已核实' : entry.status === 'rejected' ? 'REJECTED / 已拒绝' : 'PENDING / 待核实',
+        remarks: entry.remarks || '-',
+        legacyEntry: entry
+      }));
+
+    const v13Rows = v13Submissions
+      .filter((submission) =>
+        submission.employeeId === employeeId &&
+        submission.taskDate.startsWith(selectedMonth) &&
+        submission.shiftTypeSnapshot !== 'SECOND_SHIFT'
+      )
+      .map((submission) => {
+        const assignment = assignmentById.get(submission.assignmentId);
+        const isPartTime = submission.employmentTypeSnapshot === 'part-time';
+        const startTime = isPartTime
+          ? (submission.correctedStart ?? submission.originalStart ?? assignment?.plannedStart ?? '')
+          : (assignment?.plannedStart ?? '');
+        const endTime = isPartTime
+          ? (submission.correctedEnd ?? submission.originalEnd ?? assignment?.plannedEnd ?? '')
+          : (assignment?.plannedEnd ?? '');
+        const totalHours = isPartTime
+          ? (submission.effectiveWorkedHours ?? submission.correctedWorkedHours ?? submission.originalWorkedHours ?? 0)
+          : (submission.effectiveOtHours ?? submission.correctedOtHours ?? submission.originalOtHours ?? 0);
+        const corrected = Boolean(submission.correctedAt || submission.correctedOtHours !== undefined || submission.correctedWorkedHours !== undefined);
+        const statusLabel = corrected
+          ? 'CORRECTED / 已更正'
+          : submission.lateEntry
+            ? 'LATE ENTRY / 主管补录'
+            : 'SUBMITTED / 已提交';
+
+        return {
+          id: submission.id,
+          source: 'v13' as const,
+          date: submission.taskDate,
+          startTime,
+          endTime,
+          totalHours,
+          typeLabel: isPartTime ? 'PT WORKED / 兼职工时' : 'V1.3 OT / 加班',
+          verified: true,
+          status: 'verified' as const,
+          statusLabel,
+          remarks: [
+            submission.actualWorkstation || submission.assignedWorkstation,
+            submission.correctionNote,
+            submission.lateEntryReason
+          ].filter(Boolean).join(' · ') || '-',
+          legacyEntry: undefined
+        };
+      });
+
+    return [...legacyRows, ...v13Rows].sort((a, b) =>
+      a.date.localeCompare(b.date) || a.source.localeCompare(b.source)
+    );
+  }, [selectedEmployeeSummary, selectedMonth, entries, v13Assignments, v13Submissions]);
+
   const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || (!editingEmployeeId && !newPassword)) return;
