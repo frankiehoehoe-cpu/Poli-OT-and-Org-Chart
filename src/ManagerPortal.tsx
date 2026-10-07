@@ -1000,7 +1000,7 @@ export default function ManagerPortal() {
                     <div>
                       <h4 className="text-2xl font-black text-slate-900" translate="no">{selectedEmployeeSummary.employeeName}</h4>
                       <p className="text-slate-500 font-bold uppercase tracking-widest text-xs mt-1">
-                        Detailed Report for {selectedMonth} <span className="text-slate-300 mx-2">|</span> {selectedEmployeeSummary.totalHours.toFixed(1)}h Total (x1.5 only)
+                        Detailed Report for {selectedMonth} <span className="text-slate-300 mx-2">|</span> {selectedEmployeeSummary.totalHours.toFixed(1)}h Authoritative Total
                       </p>
                     </div>
                     {confirmedEmployees.has(selectedEmployeeSummary.employeeId) && (
@@ -1025,102 +1025,115 @@ export default function ManagerPortal() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {entries
-                          .filter(e => e.employeeId === selectedEmployeeSummary.employeeId && e.date.startsWith(selectedMonth))
-                          .sort((a, b) => a.date.localeCompare(b.date))
-                          .map(entry => {
-                            const isSelected = selectedEntryIds.has(entry.id);
-                            return (
-                              <tr 
-                                key={entry.id} 
-                                onClick={(e) => handleEntryClick(entry.id, e)}
-                                className={`transition-all cursor-pointer select-none ${
-                                  isSelected 
-                                    ? 'bg-indigo-50 hover:bg-indigo-100' 
-                                    : 'hover:bg-slate-50/30'
-                                }`}
-                              >
-                                <td className="px-8 py-5 font-bold text-slate-800">
-                                  <div className="flex items-center gap-3">
-                                    {isSelected && (
-                                      <motion.div 
-                                        initial={{ scale: 0 }}
-                                        animate={{ scale: 1 }}
-                                        className="w-2 h-2 rounded-full bg-indigo-600 shrink-0"
-                                      />
-                                    )}
-                                    {formatDateWithDay(entry.date)}
-                                  </div>
-                                </td>
-                                <td className="px-8 py-5 text-slate-500 font-medium">
-                                  {formatTime(entry.startTime)} - {formatTime(entry.endTime)}
-                                </td>
-                                <td className="px-8 py-5">
-                                  <span className={`px-2 py-0.5 rounded-lg font-normal text-xs ${entry.multiplier === 2.0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                                    {entry.multiplier === 2.0 ? t('overtime20') : t('overtime15')}
-                                  </span>
-                                </td>
-                                <td className="px-8 py-5">
-                                  <span className={`font-black ${isSelected ? 'text-indigo-700' : 'text-indigo-600'}`}>{entry.totalHours}h</span>
-                                </td>
-                                <td className="px-8 py-5">
-                                  {entry.verified ? (
-                                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1">
-                                      <CheckCircle2 className="w-4 h-4" />
-                                      OK
-                                    </span>
-                                  ) : entry.status === 'rejected' ? (
-                                    <span className="text-[10px] font-black text-red-500 uppercase tracking-widest flex items-center gap-1">
-                                      <X className="w-4 h-4" />
-                                      {t('rejected') || 'Rejected'}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-1">
-                                      <AlertCircle className="w-4 h-4" />
-                                      {t('pending') || 'Pending'}
-                                    </span>
+                        {selectedReportRows.map((row) => {
+                          const isLegacy = row.source === 'legacy';
+                          const isSelected = isLegacy && selectedEntryIds.has(row.id);
+                          return (
+                            <tr
+                              key={`${row.source}-${row.id}`}
+                              onClick={isLegacy ? (event) => handleEntryClick(row.id, event) : undefined}
+                              className={`transition-all ${isLegacy ? 'cursor-pointer select-none' : ''} ${
+                                isSelected ? 'bg-indigo-50 hover:bg-indigo-100' : 'hover:bg-slate-50/30'
+                              }`}
+                            >
+                              <td className="px-8 py-5 font-bold text-slate-800">
+                                <div className="flex items-center gap-3">
+                                  {isSelected && (
+                                    <motion.div
+                                      initial={{ scale: 0 }}
+                                      animate={{ scale: 1 }}
+                                      className="h-2 w-2 shrink-0 rounded-full bg-indigo-600"
+                                    />
                                   )}
-                                </td>
-                                <td className="px-8 py-5 text-slate-400 italic text-sm">{entry.remarks || '-'}</td>
-                                <td className="px-8 py-5 text-right no-print">
-                                  <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
-                                    {!entry.verified && entry.status !== 'rejected' && (
+                                  {formatDateWithDay(row.date)}
+                                </div>
+                              </td>
+                              <td className="px-8 py-5 font-medium text-slate-500">
+                                {row.startTime && row.endTime
+                                  ? `${formatTime(row.startTime)} - ${formatTime(row.endTime)}`
+                                  : '-'}
+                              </td>
+                              <td className="px-8 py-5">
+                                <span className={`rounded-lg px-2 py-0.5 text-xs font-bold ${
+                                  row.source === 'v13'
+                                    ? 'bg-indigo-50 text-indigo-700'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {row.typeLabel}
+                                </span>
+                              </td>
+                              <td className="px-8 py-5">
+                                <span className={`font-black ${isSelected ? 'text-indigo-700' : 'text-indigo-600'}`}>
+                                  {row.totalHours.toFixed(1)}h
+                                </span>
+                              </td>
+                              <td className="px-8 py-5">
+                                <span className={`flex w-fit items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-widest ${
+                                  row.source === 'v13'
+                                    ? 'bg-emerald-50 text-emerald-600'
+                                    : row.verified
+                                      ? 'bg-emerald-50 text-emerald-600'
+                                      : row.status === 'rejected'
+                                        ? 'bg-red-50 text-red-500'
+                                        : 'bg-amber-50 text-amber-600'
+                                }`}>
+                                  {row.source === 'v13' || row.verified ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                                  {row.statusLabel}
+                                </span>
+                              </td>
+                              <td className="px-8 py-5 text-sm italic text-slate-500">{row.remarks}</td>
+                              <td className="px-8 py-5 text-right no-print">
+                                {row.source === 'legacy' && row.legacyEntry ? (
+                                  <div className="flex items-center justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+                                    {!row.legacyEntry.verified && row.legacyEntry.status !== 'rejected' && (
                                       <>
-                                        <button 
-                                          onClick={() => handleVerifyEntry(entry.id)}
-                                          className="p-3 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all shadow-sm border border-emerald-100 bg-emerald-50/20"
+                                        <button
+                                          onClick={() => handleVerifyEntry(row.legacyEntry!.id)}
+                                          className="rounded-xl border border-emerald-100 bg-emerald-50/20 p-3 text-emerald-600 shadow-sm transition-all hover:bg-emerald-50"
                                           title="Verify"
                                         >
-                                          <CheckCircle2 className="w-6 h-6" />
+                                          <CheckCircle2 className="h-6 w-6" />
                                         </button>
-                                        <button 
-                                          onClick={() => handleRejectEntry(entry.id)}
-                                          className="p-3 text-amber-600 hover:bg-amber-50 rounded-xl transition-all shadow-sm border border-amber-100 bg-amber-50/20"
+                                        <button
+                                          onClick={() => handleRejectEntry(row.legacyEntry!.id)}
+                                          className="rounded-xl border border-amber-100 bg-amber-50/20 p-3 text-amber-600 shadow-sm transition-all hover:bg-amber-50"
                                           title="Reject"
                                         >
-                                          <X className="w-6 h-6" />
+                                          <X className="h-6 w-6" />
                                         </button>
                                       </>
                                     )}
-                                    <button 
-                                      onClick={() => setEditingEntry(entry)}
-                                      className="p-3 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl transition-all shadow-md border border-indigo-200 bg-white"
+                                    <button
+                                      onClick={() => setEditingEntry(row.legacyEntry!)}
+                                      className="rounded-xl border border-indigo-200 bg-white p-3 text-indigo-600 shadow-md transition-all hover:bg-indigo-600 hover:text-white"
                                       title="Edit"
                                     >
-                                      <PenTool className="w-6 h-6" />
+                                      <PenTool className="h-6 w-6" />
                                     </button>
-                                    <button 
-                                      onClick={() => setDeletingEntryId(entry.id)}
-                                      className="p-3 text-slate-600 hover:text-white hover:bg-red-600 rounded-xl transition-all shadow-md border border-slate-200 bg-white"
+                                    <button
+                                      onClick={() => setDeletingEntryId(row.legacyEntry!.id)}
+                                      className="rounded-xl border border-slate-200 bg-white p-3 text-slate-600 shadow-md transition-all hover:bg-red-600 hover:text-white"
                                       title="Delete"
                                     >
-                                      <Trash2 className="w-6 h-6" />
+                                      <Trash2 className="h-6 w-6" />
                                     </button>
                                   </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
+                                ) : (
+                                  <span className="inline-flex rounded-lg bg-indigo-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-indigo-600">
+                                    V1.3 AUTHORITATIVE
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {selectedReportRows.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="px-8 py-12 text-center text-sm font-bold text-slate-400">
+                              No OT / work-hour records for this month / 本月没有加班或工时记录
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                       <tfoot>
                         <tr className="bg-slate-50/50">
