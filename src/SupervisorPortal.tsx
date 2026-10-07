@@ -10,6 +10,7 @@ import { TaskWorkflow } from './components/workflow/TaskWorkflow';
 import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
 import { ShiftNoticeControl } from './components/workflow/ShiftPlanning';
 import { OT_V13_ENABLED } from './lib/v13Flags';
+import RosterBoard from './RosterBoard';
 import { motion, AnimatePresence } from 'motion/react';
 import SignatureCanvas from 'react-signature-canvas';
 import { formatDate, formatTime, formatDateWithDay } from './lib/dateUtils';
@@ -31,7 +32,8 @@ import {
   Upload,
   Printer,
   FileText,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Map as MapIcon
 } from 'lucide-react';
 
 interface EmployeeSummary {
@@ -55,6 +57,7 @@ export default function SupervisorPortal() {
   const [v13Submissions, setV13Submissions] = useState<WorkSubmission[]>([]);
   const [v13Assignments, setV13Assignments] = useState<WorkAssignment[]>([]);
   const [v13Aggregates, setV13Aggregates] = useState<EmployeeMonthAggregate[]>([]);
+  const [portalView, setPortalView] = useState<'workflow' | 'roster'>('workflow');
 
   // Signature States
   const [employeeReport, setEmployeeReport] = useState<any>(null);
@@ -263,7 +266,19 @@ export default function SupervisorPortal() {
               <p className="text-xs text-slate-800 font-medium">{t('verifyAll')}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPortalView((current) => current === 'roster' ? 'workflow' : 'roster')}
+              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition-colors ${
+                portalView === 'roster'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+              title="Roster / 调度"
+            >
+              <MapIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">{portalView === 'roster' ? 'Work Assignments / 加班任务' : 'Roster / 调度'}</span>
+            </button>
             <button 
               onClick={() => navigate('/overview')}
               className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors"
@@ -281,7 +296,11 @@ export default function SupervisorPortal() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto p-6 space-y-6">
+      <main className={portalView === 'roster' ? 'mx-auto max-w-[1600px] p-4 sm:p-6' : 'max-w-5xl mx-auto p-6 space-y-6'}>
+        {portalView === 'roster' ? (
+          <RosterBoard />
+        ) : (
+          <>
         {OT_V13_ENABLED && <>
           <TaskWorkflow role="supervisor" employees={employees} />
           <PartTimeAvailabilityCalendar
@@ -645,6 +664,8 @@ export default function SupervisorPortal() {
             </motion.div>
           )}
         </AnimatePresence>
+          </>
+        )}
       </main>
 
       {/* Signature Modal */}
