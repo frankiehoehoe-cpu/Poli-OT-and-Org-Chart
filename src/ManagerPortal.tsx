@@ -367,43 +367,47 @@ export default function ManagerPortal() {
   };
 
   const calculateSummaries = () => {
-    const monthlyEntries = entries.filter(e => e.date.startsWith(selectedMonth));
-    
     const summaryMap = new Map<string, OvertimeSummary>();
-    
-    employees.forEach(emp => {
-      summaryMap.set(emp.id, {
-        employeeId: emp.id,
-        employeeName: emp.name,
-        totalHours: 0,
-        entryCount: 0,
-        averageHours: 0,
-        unverifiedCount: 0,
-        unverifiedHours: 0
+    const aggregateMap = new Map(v13Aggregates.map((aggregate) => [aggregate.employeeId, aggregate]));
+
+    employees.forEach((employee) => {
+      const aggregate = aggregateMap.get(employee.id);
+      const isPartTime = getEmploymentType(employee) === 'part-time';
+      const totalHours = aggregate
+        ? (isPartTime ? aggregate.partTimeWorkedHours : aggregate.fullTimeOtHours)
+        : 0;
+      const entryCount = aggregate
+        ? (isPartTime ? aggregate.partTimeSubmissionCount : aggregate.otEntryCount)
+        : 0;
+
+      const authoritativeV13Days = new Set(
+        v13Assignments
+          .filter((assignment) =>
+            assignment.date.startsWith(selectedMonth) &&
+            assignment.assignmentMode === 'ot-task' &&
+            assignment.status !== 'CANCELLED' &&
+            assignment.assignedEmployeeIds.includes(employee.id)
+          )
+          .map((assignment) => assignment.date)
+      );
+
+      const visibleLegacyEntries = entries.filter((entry) =>
+        entry.employeeId === employee.id &&
+        entry.date.startsWith(selectedMonth) &&
+        entry.multiplier !== 2.0 &&
+        !authoritativeV13Days.has(entry.date)
+      );
+      const unverifiedLegacy = visibleLegacyEntries.filter((entry) => !entry.verified && entry.status !== 'rejected');
+
+      summaryMap.set(employee.id, {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        totalHours,
+        entryCount,
+        averageHours: entryCount > 0 ? totalHours / entryCount : 0,
+        unverifiedCount: unverifiedLegacy.length,
+        unverifiedHours: unverifiedLegacy.reduce((sum, entry) => sum + entry.totalHours, 0)
       });
-    });
-
-    monthlyEntries.forEach(entry => {
-      const summary = summaryMap.get(entry.employeeId);
-      if (summary) {
-        // Only add to total hours if multiplier is not 2.0
-        if (entry.multiplier !== 2.0) {
-          summary.totalHours += entry.totalHours;
-        }
-        summary.entryCount += 1;
-        if (!entry.verified) {
-          summary.unverifiedCount += 1;
-          if (entry.multiplier !== 2.0) {
-            summary.unverifiedHours += entry.totalHours;
-          }
-        }
-      }
-    });
-
-    summaryMap.forEach(summary => {
-      if (summary.entryCount > 0) {
-        summary.averageHours = summary.totalHours / summary.entryCount;
-      }
     });
 
     setSummaries(Array.from(summaryMap.values()));
