@@ -267,14 +267,20 @@ export default function ManagerPortal() {
   };
 
   const fetchData = async () => {
-    const [empData, entryData, planData] = await Promise.all([
+    const [empData, entryData, planData, submissionsData, assignmentsData, monthData] = await Promise.all([
       employeeService.getAllEmployees(),
       overtimeService.getAllEntries(selectedMonth),
-      planService.getAllPlansForMonth(selectedMonth)
+      planService.getAllPlansForMonth(selectedMonth),
+      OT_V13_ENABLED ? workflowService.submissions(selectedMonth) : Promise.resolve([]),
+      OT_V13_ENABLED ? workflowService.assignments() : Promise.resolve([]),
+      OT_V13_ENABLED ? workflowService.month(selectedMonth) : Promise.resolve({ aggregates: [], forecasts: [] })
     ]);
     setEmployees(empData);
     setEntries(entryData);
     setPlans(planData);
+    setV13Submissions(submissionsData);
+    setV13Assignments(assignmentsData);
+    setV13Aggregates(monthData.aggregates);
   };
 
   const handleEditEntry = async (e: React.FormEvent) => {
