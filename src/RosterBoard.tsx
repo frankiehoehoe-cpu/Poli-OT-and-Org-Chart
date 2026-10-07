@@ -845,36 +845,44 @@ export default function RosterBoard() {
                                 <span className="truncate text-[11px] font-black uppercase tracking-wide text-slate-700">{subLocation}</span>
                                 <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500">{assignedEmployees.length}</span>
                               </div>
-                              <div className="ml-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                              <div className="ml-2 flex shrink-0 items-center gap-1 opacity-100">
                                 <button
                                   type="button"
                                   disabled={index === 0}
                                   onClick={() => void moveZone(location.id as string, index, 'up')}
-                                  className="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700 disabled:opacity-20"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-slate-100 active:scale-95 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300 disabled:opacity-60"
+                                  title="Move Up / 上移"
+                                  aria-label="Move Up / 上移"
                                 >
-                                  <ChevronUp className="h-3.5 w-3.5" />
+                                  <ChevronUp className="h-4 w-4" />
                                 </button>
                                 <button
                                   type="button"
                                   disabled={index === location.sub.length - 1}
                                   onClick={() => void moveZone(location.id as string, index, 'down')}
-                                  className="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700 disabled:opacity-20"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-slate-100 active:scale-95 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300 disabled:opacity-60"
+                                  title="Move Down / 下移"
+                                  aria-label="Move Down / 下移"
                                 >
-                                  <ChevronDown className="h-3.5 w-3.5" />
+                                  <ChevronDown className="h-4 w-4" />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleEditZone(location.id as string, index, subLocation)}
-                                  className="rounded p-1 text-slate-400 hover:bg-white hover:text-indigo-600"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm transition hover:bg-indigo-100 active:scale-95"
+                                  title="Edit / 编辑"
+                                  aria-label="Edit / 编辑"
                                 >
-                                  <Pencil className="h-3.5 w-3.5" />
+                                  <Pencil className="h-4 w-4" />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => void deleteZone(location.id as string, index)}
-                                  className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-300 bg-red-50 text-red-700 shadow-sm transition hover:bg-red-100 active:scale-95"
+                                  title="Delete / 删除"
+                                  aria-label="Delete / 删除"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <Trash2 className="h-4 w-4" />
                                 </button>
                               </div>
                             </>
