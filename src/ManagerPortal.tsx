@@ -42,6 +42,8 @@ import { getSingaporeMonth } from './lib/overtimeRisk';
 import { MixedMonthAnalytics } from './components/workflow/TaskWorkflow';
 import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
 import { OT_V13_ENABLED } from './lib/v13Flags';
+import { workflowService } from './lib/workflowService';
+import { getEmploymentType, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from './lib/workflows';
 
 export default function ManagerPortal() {
   const { logout, user } = useAuth();
@@ -51,6 +53,9 @@ export default function ManagerPortal() {
   const [entries, setEntries] = useState<OvertimeEntry[]>([]);
   const [plans, setPlans] = useState<OvertimePlan[]>([]);
   const [summaries, setSummaries] = useState<OvertimeSummary[]>([]);
+  const [v13Submissions, setV13Submissions] = useState<WorkSubmission[]>([]);
+  const [v13Assignments, setV13Assignments] = useState<WorkAssignment[]>([]);
+  const [v13Aggregates, setV13Aggregates] = useState<EmployeeMonthAggregate[]>([]);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'profiles' | 'report' | 'settings' | 'planning' | 'roster' | 'orgchart'>('dashboard');
   
   // Create/Edit Profile State
