@@ -17,6 +17,10 @@ import {
   Briefcase,
   Calendar as CalendarIcon,
   CalendarClock,
+  ChevronDown,
+  ChevronUp,
+  Minimize2,
+  Maximize2,
   X
 } from 'lucide-react';
 import LoginPage from './LoginPage';
@@ -40,6 +44,8 @@ export default function LandingPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<UserProfile | null>(null);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const [showOrgChartPublic, setShowOrgChartPublic] = useState(false);
+  const [calendarCompact, setCalendarCompact] = useState(true);
+  const [staffCompact, setStaffCompact] = useState(true);
 
   useEffect(() => {
     let unsubscribeOverview: Unsubscribe | undefined;
@@ -186,29 +192,40 @@ export default function LandingPage() {
         </header>
 
         {/* Current Month Calendar */}
-        <section className="max-w-4xl mx-auto w-full">
-          <div className="bg-white rounded-[40px] border border-slate-200 shadow-xl overflow-hidden">
-            <div className="bg-slate-900 p-8 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-vibrant flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-                  <CalendarIcon className="w-6 h-6" />
+        <section className="mx-auto w-full max-w-5xl">
+          <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-lg">
+            <div className={`flex items-center justify-between bg-slate-900 transition-all ${calendarCompact ? 'px-5 py-4' : 'p-7'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`flex items-center justify-center rounded-xl bg-vibrant text-white shadow-lg shadow-indigo-500/20 ${calendarCompact ? 'h-9 w-9' : 'h-12 w-12'}`}>
+                  <CalendarIcon className={calendarCompact ? 'h-4 w-4' : 'h-6 w-6'} />
                 </div>
                 <div>
-                  <h2 className="text-xl font-black text-white uppercase tracking-tight">{t('plannedOvertime')}</h2>
-                  <p className="text-xs font-bold text-slate-700 uppercase tracking-widest">{monthName} {year}</p>
+                  <h2 className={`font-black uppercase tracking-tight text-white ${calendarCompact ? 'text-base' : 'text-xl'}`}>{t('plannedOvertime')}</h2>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{monthName} {year}</p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setCalendarCompact((value) => !value)}
+                className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white transition hover:bg-white/20"
+                title={calendarCompact ? 'Expand calendar / 放大日历' : 'Compact calendar / 缩小日历'}
+              >
+                {calendarCompact ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
+                <span className="hidden sm:inline">{calendarCompact ? 'Expand / 展开' : 'Compact / 缩小'}</span>
+              </button>
             </div>
 
-            <div className="p-8">
-              <div className="grid grid-cols-7 gap-4 mb-4">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-                  <div key={d} className="text-center text-[10px] font-black text-slate-700 uppercase tracking-widest">{d}</div>
+            <div className={calendarCompact ? 'p-4 sm:p-5' : 'p-6 sm:p-8'}>
+              <div className={`mb-2 grid grid-cols-7 ${calendarCompact ? 'gap-1.5' : 'gap-3'}`}>
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayName) => (
+                  <div key={dayName} className="text-center text-[9px] font-black uppercase tracking-widest text-slate-500">
+                    {dayName}
+                  </div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-4">
-                {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-                  <div key={`empty-${i}`} className="aspect-square"></div>
+              <div className={`grid grid-cols-7 ${calendarCompact ? 'gap-1.5' : 'gap-3'}`}>
+                {Array.from({ length: firstDayOfMonth }).map((_, index) => (
+                  <div key={`empty-${index}`} className={calendarCompact ? 'h-11 sm:h-12' : 'aspect-square'} />
                 ))}
                 {calendarDays.map(({ day, dateStr, dayPlans }) => {
                   const isToday = dateStr === singaporeToday;
@@ -217,32 +234,35 @@ export default function LandingPage() {
                       key={dateStr}
                       onClick={() => dayPlans.length > 0 && setSelectedCalendarDate(dateStr)}
                       className={`
-                        group aspect-square rounded-2xl border transition-all flex flex-col items-center justify-center relative
-                        ${dayPlans.length > 0 
-                          ? 'bg-amber-50 border-amber-200 hover:bg-amber-100 cursor-pointer' 
-                          : 'bg-slate-50 border-transparent text-slate-700 opacity-60 hover:bg-slate-100 cursor-default'
+                        group relative flex flex-col items-center justify-center border transition-all
+                        ${calendarCompact ? 'h-11 rounded-xl sm:h-12' : 'aspect-square rounded-2xl'}
+                        ${dayPlans.length > 0
+                          ? 'cursor-pointer border-amber-200 bg-amber-50 hover:bg-amber-100'
+                          : 'cursor-default border-transparent bg-slate-50 text-slate-600 opacity-65'
                         }
-                        ${isToday ? 'ring-2 ring-vibrant ring-offset-2' : ''}
+                        ${isToday ? 'ring-2 ring-vibrant ring-offset-1' : ''}
                       `}
                     >
-                      <span className={`text-sm font-black ${dayPlans.length > 0 ? 'text-amber-900' : 'text-slate-700'}`}>
+                      <span className={`font-black ${calendarCompact ? 'text-[11px]' : 'text-sm'} ${dayPlans.length > 0 ? 'text-amber-900' : 'text-slate-600'}`}>
                         {day}
                       </span>
                       {dayPlans.length > 0 && (
-                        <div className="mt-1 flex flex-col items-center">
-                          <div className="flex -space-x-1 mb-1">
-                            {dayPlans.slice(0, 3).map((p, i) => (
-                              <div key={p.id} className="w-1.5 h-1.5 rounded-full bg-amber-500 border border-white"></div>
-                            ))}
-                          </div>
-                          <span className="text-[10px] font-black text-amber-600 uppercase leading-none">
+                        calendarCompact ? (
+                          <span className="mt-0.5 text-[8px] font-black uppercase leading-none text-amber-600">
                             {dayPlans.length} {t('pers')}
                           </span>
-                        </div>
-                      )}
-                      
-                      {dayPlans.length > 0 && (
-                        <div className="absolute inset-0 bg-amber-500 opacity-0 group-hover:opacity-5 rounded-2xl transition-opacity"></div>
+                        ) : (
+                          <div className="mt-1 flex flex-col items-center">
+                            <div className="mb-1 flex -space-x-1">
+                              {dayPlans.slice(0, 3).map((plan) => (
+                                <div key={plan.id} className="h-1.5 w-1.5 rounded-full border border-white bg-amber-500" />
+                              ))}
+                            </div>
+                            <span className="text-[10px] font-black uppercase leading-none text-amber-600">
+                              {dayPlans.length} {t('pers')}
+                            </span>
+                          </div>
+                        )
                       )}
                     </button>
                   );
@@ -252,77 +272,108 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Public Overview Cards / Table */}
-        <section className="space-y-8">
-          <div className="flex items-center gap-4">
-            <div className="h-px bg-slate-200 flex-1"></div>
+        {/* Employee access */}
+        <section className={staffCompact ? 'space-y-4' : 'space-y-8'}>
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="h-7 w-1.5 rounded-full bg-vibrant" />
+              <div>
+                <h2 className="text-base font-black uppercase tracking-tight text-slate-800">Employees / 员工</h2>
+                <p className="text-[10px] font-bold text-slate-500">{employees.length} {t('pers')} · {t('selectEmployee')}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStaffCompact((value) => !value)}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700"
+              title={staffCompact ? 'Expand employee cards / 放大员工卡片' : 'Compact employee cards / 缩小员工卡片'}
+            >
+              {staffCompact ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
+              <span>{staffCompact ? 'Expand / 展开' : 'Compact / 缩小'}</span>
+            </button>
           </div>
-          
-          <div className="space-y-12">
-            {['deptProduction', 'deptWarehouse', 'deptDriver', 'deptOffice', 'deptMaintenance', 'deptOther'].map(deptKey => {
-              const deptEmployees = employees.filter(emp => (emp.department || 'deptOther') === deptKey);
+
+          <div className={staffCompact ? 'space-y-5' : 'space-y-10'}>
+            {['deptProduction', 'deptWarehouse', 'deptDriver', 'deptOffice', 'deptMaintenance', 'deptOther'].map((deptKey) => {
+              const deptEmployees = employees.filter((employee) => (employee.department || 'deptOther') === deptKey);
               if (deptEmployees.length === 0) return null;
 
               return (
-                <div key={deptKey} className="space-y-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-2 h-8 bg-vibrant rounded-full"></div>
-                    <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">{t(deptKey)}</h3>
-                    <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-[10px] font-black uppercase tracking-widest leading-none">
-                      {deptEmployees.length} {t('pers')}
+                <div key={deptKey} className={staffCompact ? 'space-y-2.5' : 'space-y-5'}>
+                  <div className="flex items-center gap-2.5">
+                    <div className={`rounded-full bg-vibrant ${staffCompact ? 'h-4 w-1' : 'h-7 w-1.5'}`} />
+                    <h3 className={`font-black uppercase tracking-tight text-slate-800 ${staffCompact ? 'text-xs' : 'text-lg'}`}>{t(deptKey)}</h3>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-600">
+                      {deptEmployees.length}
                     </span>
                   </div>
-                  
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
+
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className={staffCompact
+                      ? 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+                      : 'grid gap-5 md:grid-cols-2 lg:grid-cols-3'
+                    }
                   >
-                    {deptEmployees.map((emp, idx) => {
-                      const hours = getCumulativeHours(emp.id);
+                    {deptEmployees.map((employee, index) => {
+                      const hours = getCumulativeHours(employee.id);
                       return (
                         <motion.button
-                          key={emp.id}
-                          initial={{ opacity: 0, y: 20 }}
+                          key={employee.id}
+                          initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: idx * 0.05 }}
-                          onClick={() => setSelectedEmployee(emp)}
-                          className="group relative bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:border-vibrant transition-all text-left overflow-hidden"
+                          transition={{ delay: Math.min(index * 0.02, 0.2) }}
+                          onClick={() => setSelectedEmployee(employee)}
+                          className={`group relative overflow-hidden border border-slate-200 bg-white text-left shadow-sm transition-all hover:border-vibrant hover:shadow-md ${
+                            staffCompact ? 'rounded-xl p-3' : 'rounded-3xl p-6'
+                          }`}
                         >
-                          <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <ArrowRight className="w-6 h-6 text-vibrant" />
-                          </div>
-                          
-                          <div className="flex items-center gap-4 mb-6">
-                            <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-vibrant group-hover:text-white transition-colors">
-                              <Users className="w-7 h-7" />
-                            </div>
-                            <div>
-                              <h3 className="text-xl font-black text-slate-900" translate="no">{emp.name}</h3>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('employeeAccess')}</p>
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between">
-                            <div className="space-y-1">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('totalHours')}</p>
-                              <div className="flex items-baseline gap-1 blur-text">
-                                <span className="text-2xl font-black text-slate-900">{hours.toFixed(1)}</span>
-                                <span className="text-xs font-bold text-slate-400">h</span>
+                          {staffCompact ? (
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition-colors group-hover:bg-vibrant group-hover:text-white">
+                                <Users className="h-4 w-4" />
                               </div>
+                              <div className="min-w-0 flex-1">
+                                <h3 className="truncate text-[11px] font-black text-slate-900" translate="no">{employee.name}</h3>
+                                <p className="mt-0.5 truncate text-[8px] font-bold uppercase tracking-widest text-slate-400">{t('employeeAccess')}</p>
+                              </div>
+                              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-300 transition group-hover:text-vibrant" />
                             </div>
-                            <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-inner">
-                              <Clock className="w-5 h-5 text-slate-300" />
-                            </div>
-                          </div>
-                          
-                          {/* Visual Accent */}
-                          <div className="mt-4 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                             <div 
-                              className="h-full bg-vibrant/20 transition-all group-hover:bg-vibrant/40" 
-                              style={{ width: `${Math.min((hours/40)*100, 100)}%` }}
-                             ></div>
-                          </div>
+                          ) : (
+                            <>
+                              <div className="absolute right-0 top-0 p-4 opacity-0 transition-opacity group-hover:opacity-100">
+                                <ArrowRight className="h-6 w-6 text-vibrant" />
+                              </div>
+                              <div className="mb-5 flex items-center gap-4">
+                                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 transition-colors group-hover:bg-vibrant group-hover:text-white">
+                                  <Users className="h-7 w-7" />
+                                </div>
+                                <div className="min-w-0">
+                                  <h3 className="truncate text-xl font-black text-slate-900" translate="no">{employee.name}</h3>
+                                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{t('employeeAccess')}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-4">
+                                <div className="space-y-1">
+                                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{t('totalHours')}</p>
+                                  <div className="blur-text flex items-baseline gap-1">
+                                    <span className="text-2xl font-black text-slate-900">{hours.toFixed(1)}</span>
+                                    <span className="text-xs font-bold text-slate-400">h</span>
+                                  </div>
+                                </div>
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-inner">
+                                  <Clock className="h-5 w-5 text-slate-300" />
+                                </div>
+                              </div>
+                              <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                  className="h-full bg-vibrant/20 transition-all group-hover:bg-vibrant/40"
+                                  style={{ width: `${Math.min((hours / 40) * 100, 100)}%` }}
+                                />
+                              </div>
+                            </>
+                          )}
                         </motion.button>
                       );
                     })}
