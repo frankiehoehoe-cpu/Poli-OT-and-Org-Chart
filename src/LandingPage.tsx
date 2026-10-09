@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from './lib/LanguageContext';
 import { useAuth } from './lib/AuthContext';
-import { employeeService, overtimeService, orgChartService } from './lib/services';
-import { UserProfile, OvertimeEntry } from './types';
+import { employeeService, orgChartService } from './lib/services';
+import { UserProfile } from './types';
 import { formatDateWithDay } from './lib/dateUtils';
 import { 
   Users, 
@@ -21,6 +21,9 @@ import {
   ChevronUp,
   Minimize2,
   Maximize2,
+  AlertTriangle,
+  ShieldAlert,
+  Ban,
   X
 } from 'lucide-react';
 import LoginPage from './LoginPage';
@@ -30,15 +33,15 @@ import { PublicShiftNotices } from './components/workflow/ShiftPlanning';
 import { OT_V13_ENABLED } from './lib/v13Flags';
 import { db } from './lib/firebase';
 import { workflowService, type PublicOverviewResponse } from './lib/workflowService';
-import { getSingaporeDate, type FullTimeOtAvailability } from './lib/workflows';
+import { getMonthlyFtOtRisk, getSingaporeDate, type FullTimeOtAvailability } from './lib/workflows';
 
 export default function LandingPage() {
   const { t, language, setLanguage } = useTranslation();
   const { role } = useAuth();
   const navigate = useNavigate();
   const [employees, setEmployees] = useState<UserProfile[]>([]);
-  const [entries, setEntries] = useState<OvertimeEntry[]>([]);
   const [fullTimeOtAvailability, setFullTimeOtAvailability] = useState<FullTimeOtAvailability[]>([]);
+  const [monthlyFullTimeOtHours, setMonthlyFullTimeOtHours] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<UserProfile | null>(null);
@@ -52,18 +55,16 @@ export default function LandingPage() {
     let stopped = false;
 
     async function fetchData() {
-      const currentMonth = getSingaporeDate().slice(0, 7);
-      const [emps, docs, overview] = await Promise.all([
+      const [emps, overview] = await Promise.all([
         employeeService.getAllEmployees(),
-        overtimeService.getAllEntries(currentMonth),
         workflowService.publicOverview()
       ]);
 
       if (stopped) return;
 
       setEmployees(emps);
-      setEntries(docs);
       setFullTimeOtAvailability(overview.fullTimeOtAvailability || []);
+      setMonthlyFullTimeOtHours(overview.monthlyFullTimeOtHours || {});
 
       try {
         const settings = await orgChartService.getSettings();
@@ -77,8 +78,9 @@ export default function LandingPage() {
         overviewRef,
         (snapshot) => {
           if (!snapshot.exists()) return;
-          const data = snapshot.data() as Pick<PublicOverviewResponse, 'fullTimeOtAvailability'>;
+          const data = snapshot.data() as Pick<PublicOverviewResponse, 'fullTimeOtAvailability' | 'monthlyFullTimeOtHours'>;
           setFullTimeOtAvailability(data.fullTimeOtAvailability || []);
+          setMonthlyFullTimeOtHours(data.monthlyFullTimeOtHours || {});
         },
         (error) => console.error('Public availability realtime listener failed', error)
       );
@@ -97,11 +99,7 @@ export default function LandingPage() {
     };
   }, []);
 
-  const getCumulativeHours = (empId: string) => {
-    return entries
-      .filter(e => e.employeeId === empId && e.multiplier !== 2.0)
-      .reduce((acc, curr) => acc + curr.totalHours, 0);
-  };
+  const getCumulativeHours = (empId: string) => monthlyFullTimeOtHours[empId] || 0;
 
   // Calendar Helpers — V1.3 Full-Time employee OT availability
   const singaporeToday = getSingaporeDate();
@@ -318,6 +316,27 @@ export default function LandingPage() {
                   >
                     {deptEmployees.map((employee, index) => {
                       const hours = getCumulativeHours(employee.id);
+                      const risk = getMonthlyFtOtRisk(hours);
+                      const riskActive = risk.level !== 'NORMAL';
+                      const riskCardClass = risk.level === 'LIMIT_REACHED'
+                        ? 'border-rose-400 bg-rose-50 shadow-rose-100/70'
+                        : risk.level === 'CRITICAL'
+                          ? 'border-red-300 bg-red-50/70 shadow-red-100/60'
+                          : risk.level === 'WATCH'
+                            ? 'border-amber-300 bg-amber-50/70 shadow-amber-100/60'
+                            : 'border-slate-200 bg-white';
+                      const riskTextClass = risk.level === 'LIMIT_REACHED'
+                        ? 'text-rose-800'
+                        : risk.level === 'CRITICAL'
+                          ? 'text-red-700'
+                          : 'text-amber-700';
+                      const riskLabel = risk.level === 'LIMIT_REACHED'
+                        ? `LIMIT REACHED · ${hours.toFixed(1)} / 72h`
+                        : risk.level === 'CRITICAL'
+                          ? `CRITICAL · ${hours.toFixed(1)} / 72h`
+                          : risk.level === 'WATCH'
+                            ? `WATCH · ${hours.toFixed(1)} / 72h`
+                            : '';
                       return (
                         <motion.button
                           key={employee.id}
@@ -325,20 +344,40 @@ export default function LandingPage() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: Math.min(index * 0.02, 0.2) }}
                           onClick={() => setSelectedEmployee(employee)}
-                          className={`group relative overflow-hidden border border-slate-200 bg-white text-left shadow-sm transition-all hover:border-vibrant hover:shadow-md ${
-                            staffCompact ? 'rounded-xl p-3' : 'rounded-3xl p-6'
-                          }`}
+                          className={`group relative overflow-hidden border text-left shadow-sm transition-all hover:shadow-md ${riskCardClass} ${
+                            risk.level === 'LIMIT_REACHED' ? 'hover:border-rose-500' : risk.level === 'CRITICAL' ? 'hover:border-red-400' : risk.level === 'WATCH' ? 'hover:border-amber-400' : 'hover:border-vibrant'
+                          } ${staffCompact ? 'rounded-xl p-3' : 'rounded-3xl p-6'}`}
                         >
                           {staffCompact ? (
                             <div className="flex min-w-0 items-center gap-2.5">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition-colors group-hover:bg-vibrant group-hover:text-white">
-                                <Users className="h-4 w-4" />
+                              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                                risk.level === 'LIMIT_REACHED'
+                                  ? 'bg-rose-100 text-rose-700'
+                                  : risk.level === 'CRITICAL'
+                                    ? 'bg-red-100 text-red-700'
+                                    : risk.level === 'WATCH'
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-indigo-50 text-indigo-600 group-hover:bg-vibrant group-hover:text-white'
+                              }`}>
+                                {risk.level === 'LIMIT_REACHED' ? <Ban className="h-4 w-4" /> : risk.level === 'CRITICAL' ? <ShieldAlert className="h-4 w-4" /> : risk.level === 'WATCH' ? <AlertTriangle className="h-4 w-4" /> : <Users className="h-4 w-4" />}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <h3 className="truncate text-[11px] font-black text-slate-900" translate="no">{employee.name}</h3>
-                                <p className="mt-0.5 truncate text-[8px] font-bold uppercase tracking-widest text-slate-400">{t('employeeAccess')}</p>
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <h3 className="truncate text-[11px] font-black text-slate-900" translate="no">{employee.name}</h3>
+                                  {riskActive && (
+                                    <span
+                                      className={`h-2 w-2 shrink-0 rounded-full ${
+                                        risk.level === 'LIMIT_REACHED' ? 'bg-rose-600' : risk.level === 'CRITICAL' ? 'bg-red-500 animate-pulse' : 'bg-amber-400 animate-pulse'
+                                      }`}
+                                      style={risk.level === 'CRITICAL' ? { animationDuration: '1.8s' } : risk.level === 'WATCH' ? { animationDuration: '2.5s' } : undefined}
+                                    />
+                                  )}
+                                </div>
+                                <p className={`mt-0.5 truncate text-[8px] font-black uppercase tracking-wide ${riskActive ? riskTextClass : 'text-slate-400'}`}>
+                                  {riskActive ? riskLabel : t('employeeAccess')}
+                                </p>
                               </div>
-                              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-300 transition group-hover:text-vibrant" />
+                              <ArrowRight className={`h-3.5 w-3.5 shrink-0 transition ${riskActive ? riskTextClass : 'text-slate-300 group-hover:text-vibrant'}`} />
                             </div>
                           ) : (
                             <>
@@ -346,12 +385,25 @@ export default function LandingPage() {
                                 <ArrowRight className="h-6 w-6 text-vibrant" />
                               </div>
                               <div className="mb-5 flex items-center gap-4">
-                                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 transition-colors group-hover:bg-vibrant group-hover:text-white">
-                                  <Users className="h-7 w-7" />
+                                <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${
+                                  risk.level === 'LIMIT_REACHED'
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : risk.level === 'CRITICAL'
+                                      ? 'bg-red-100 text-red-700'
+                                      : risk.level === 'WATCH'
+                                        ? 'bg-amber-100 text-amber-700'
+                                        : 'bg-indigo-50 text-indigo-600 transition-colors group-hover:bg-vibrant group-hover:text-white'
+                                }`}>
+                                  {risk.level === 'LIMIT_REACHED' ? <Ban className="h-7 w-7" /> : risk.level === 'CRITICAL' ? <ShieldAlert className="h-7 w-7" /> : risk.level === 'WATCH' ? <AlertTriangle className="h-7 w-7" /> : <Users className="h-7 w-7" />}
                                 </div>
                                 <div className="min-w-0">
-                                  <h3 className="truncate text-xl font-black text-slate-900" translate="no">{employee.name}</h3>
-                                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{t('employeeAccess')}</p>
+                                  <div className="flex items-center gap-2">
+                                    <h3 className="truncate text-xl font-black text-slate-900" translate="no">{employee.name}</h3>
+                                    {riskActive && <span className={`h-2.5 w-2.5 rounded-full ${risk.level === 'LIMIT_REACHED' ? 'bg-rose-600' : risk.level === 'CRITICAL' ? 'bg-red-500 animate-pulse' : 'bg-amber-400 animate-pulse'}`} />}
+                                  </div>
+                                  <p className={`text-[10px] font-black uppercase tracking-widest ${riskActive ? riskTextClass : 'text-slate-400'}`}>
+                                    {riskActive ? riskLabel : t('employeeAccess')}
+                                  </p>
                                 </div>
                               </div>
                               <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-4">
@@ -368,8 +420,8 @@ export default function LandingPage() {
                               </div>
                               <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                                 <div
-                                  className="h-full bg-vibrant/20 transition-all group-hover:bg-vibrant/40"
-                                  style={{ width: `${Math.min((hours / 40) * 100, 100)}%` }}
+                                  className={`h-full transition-all ${risk.level === 'LIMIT_REACHED' ? 'bg-rose-600' : risk.level === 'CRITICAL' ? 'bg-red-500' : risk.level === 'WATCH' ? 'bg-amber-400' : 'bg-vibrant/20 group-hover:bg-vibrant/40'}`}
+                                  style={{ width: `${Math.min((hours / 72) * 100, 100)}%` }}
                                 />
                               </div>
                             </>
