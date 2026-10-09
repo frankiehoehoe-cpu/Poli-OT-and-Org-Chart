@@ -3,7 +3,8 @@ import type { Request, Response } from 'express';
 import { commitServerDocuments, getServerDocument, listServerDocuments, updateServerDocument } from '../_firebaseAdmin.js';
 import { getV13Collections } from '../_v13Collections.js';
 import { getEffectiveEmployee } from '../_v13Employees.js';
-import { updateCurrentOverviewForSubmission } from '../_publicOverview.js';
+import { rebuildCurrentPublicOverview, updateCurrentOverviewForSubmission } from '../_publicOverview.js';
+import { assertFullTimeOtWriteWithinLimit } from '../_otPolicy.js';
 import { requireSession } from '../_session.js';
 import { badRequest, conflict, requireV13Mutation, safeString, sendApiError } from '../_v13.js';
 import {
@@ -206,6 +207,9 @@ export default async function handler(request: Request, response: Response) {
         ? 'Full-Time OT hours must use 0.5-hour increments between 0.5 and 12'
         : 'Part-Time worked hours must use 0.25-hour increments');
       if (hours > elapsedHours) throw badRequest('Recorded hours cannot exceed the start/end time span');
+      if (employmentType === 'full-time') {
+        await assertFullTimeOtWriteWithinLimit({ employeeId, date, newHours: hours });
+      }
 
       const sameDaySubmissions = (await listServerDocuments<WorkSubmission>(collections.submissions))
         .map((document) => document.data)
@@ -272,6 +276,9 @@ export default async function handler(request: Request, response: Response) {
         { collection: collections.assignments, id: assignmentId, data: assignment as unknown as Record<string, unknown>, exists: false },
         { collection: collections.submissions, id: submissionId, data: submission as unknown as Record<string, unknown>, exists: false }
       ]);
+      await rebuildCurrentPublicOverview().catch((error) => {
+        console.error('Public overview refresh after supervisor manual entry failed', error instanceof Error ? error.message : error);
+      });
       return response.status(201).json({ submission });
     }
 
@@ -324,6 +331,7 @@ export default async function handler(request: Request, response: Response) {
       if (employmentType === 'full-time') {
         const hours = Number(request.body?.otHours);
         if (!Number.isFinite(hours) || hours < 0.5 || hours > 12 || !Number.isInteger(hours * 2)) throw badRequest('OT hours must use 0.5-hour increments between 0.5 and 12');
+        await assertFullTimeOtWriteWithinLimit({ employeeId, date: assignment.date, newHours: hours });
         submission = { ...common, originalOtHours: hours, effectiveOtHours: hours };
       } else {
         const originalStart = safeString(request.body?.actualStart, 5);
@@ -406,6 +414,7 @@ export default async function handler(request: Request, response: Response) {
       if (employmentType === 'full-time') {
         const hours = Number(request.body?.otHours);
         if (!Number.isFinite(hours) || hours < 0.5 || hours > 12 || !Number.isInteger(hours * 2)) throw badRequest('OT hours must use 0.5-hour increments between 0.5 and 12');
+        await assertFullTimeOtWriteWithinLimit({ employeeId: session.employeeId, date: assignment.date, newHours: hours });
         submission = { ...common, originalOtHours: hours, effectiveOtHours: hours };
       } else {
         const originalStart = safeString(request.body?.actualStart, 5);
@@ -444,8 +453,16 @@ export default async function handler(request: Request, response: Response) {
         correctedBy: session.subject,
         correctedAt
       });
+      if (corrected.employmentTypeSnapshot === 'full-time') {
+        await assertFullTimeOtWriteWithinLimit({
+          employeeId: corrected.employeeId,
+          date: corrected.taskDate,
+          newHours: corrected.effectiveOtHours ?? corrected.originalOtHours ?? 0,
+          replaceExistingHours: document.data.effectiveOtHours ?? document.data.originalOtHours ?? 0
+        });
+      }
       await updateServerDocument(collections.submissions, id, corrected as unknown as Record<string, unknown>, document.updateTime);
-      await updateCurrentOverviewForSubmission(corrected).catch((error) => {
+      await rebuildCurrentPublicOverview().catch((error) => {
         console.error('Public overview refresh after correction failed', error instanceof Error ? error.message : error);
       });
       return response.status(200).json({ submission: corrected });
