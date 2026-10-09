@@ -148,6 +148,31 @@ export interface PartTimeMonthlyForecast {
   isFinal: boolean;
 }
 
+export const MONTHLY_FT_OT_LIMIT_HOURS = 72;
+export const MONTHLY_FT_OT_WATCH_HOURS = MONTHLY_FT_OT_LIMIT_HOURS * 0.6;
+export const MONTHLY_FT_OT_CRITICAL_HOURS = MONTHLY_FT_OT_LIMIT_HOURS * 0.9;
+
+export type MonthlyFtOtRiskLevel = 'NORMAL' | 'WATCH' | 'CRITICAL' | 'LIMIT_REACHED';
+
+export function getMonthlyFtOtRisk(hours: number): {
+  level: MonthlyFtOtRiskLevel;
+  hours: number;
+  percentage: number;
+  remainingHours: number;
+} {
+  const normalizedHours = Number.isFinite(hours) ? Math.max(0, hours) : 0;
+  const percentage = Math.min(100, Math.round((normalizedHours / MONTHLY_FT_OT_LIMIT_HOURS) * 1000) / 10);
+  const remainingHours = Math.max(0, Math.round((MONTHLY_FT_OT_LIMIT_HOURS - normalizedHours) * 10) / 10);
+  const level: MonthlyFtOtRiskLevel = normalizedHours >= MONTHLY_FT_OT_LIMIT_HOURS
+    ? 'LIMIT_REACHED'
+    : normalizedHours >= MONTHLY_FT_OT_CRITICAL_HOURS
+      ? 'CRITICAL'
+      : normalizedHours >= MONTHLY_FT_OT_WATCH_HOURS
+        ? 'WATCH'
+        : 'NORMAL';
+  return { level, hours: normalizedHours, percentage, remainingHours };
+}
+
 export const getEmploymentType = (employee: { employmentType?: EmploymentType | string }): EmploymentType =>
   employee.employmentType === 'part-time' ? 'part-time' : 'full-time';
 
