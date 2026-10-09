@@ -4,6 +4,7 @@ import { getServerDocument, listServerDocuments, updateServerDocument, createSer
 import { getV13Collections } from '../_v13Collections.js';
 import { getEffectiveEmployee, listEffectiveEmployees } from '../_v13Employees.js';
 import { rebuildCurrentPublicOverview } from '../_publicOverview.js';
+import { assertFullTimeOtAssignmentAllowed } from '../_otPolicy.js';
 import { requireSession } from '../_session.js';
 import { badRequest, conflict, requireV13Mutation, safeString, safeStringArray, sendApiError } from '../_v13.js';
 import { getEffectiveShiftType, getEmploymentType, getSingaporeDate, isEmployeeEligibleForAssignment, type AssignmentMode, type FullTimeOtAvailability, type PartTimeAvailability, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
@@ -240,6 +241,9 @@ export default async function handler(request: Request, response: Response) {
       const assignment = assignmentInput(request.body || {});
       await validateAssignedEmployees(assignment.assignedEmployeeIds, assignment.assignmentMode, assignment.shiftType);
       await validateNoDuplicateDailyAssignments(collections.assignments, assignment.assignedEmployeeIds, assignment.date);
+      if (assignment.assignmentMode === 'ot-task') {
+        await assertFullTimeOtAssignmentAllowed(assignment.assignedEmployeeIds, assignment.date);
+      }
       const created: WorkAssignment = { ...assignment, createdBy: session.subject, createdAt: now, updatedAt: now, revision: 1 };
       await createServerDocument(collections.assignments, created.id, created as unknown as Record<string, unknown>);
       await rebuildCurrentPublicOverview().catch((error) => {
@@ -269,6 +273,11 @@ export default async function handler(request: Request, response: Response) {
         if ([...submittedIds].some((employeeId) => !updated.assignedEmployeeIds.includes(employeeId))) throw conflict('Submitted employee cannot be removed');
         await validateAssignedEmployees(updated.assignedEmployeeIds, updated.assignmentMode, updated.shiftType);
         await validateNoDuplicateDailyAssignments(collections.assignments, updated.assignedEmployeeIds, updated.date, assignment.id);
+        if (updated.assignmentMode === 'ot-task') {
+          const previouslyAssigned = new Set(assignment.assignedEmployeeIds);
+          const newlyAdded = updated.assignedEmployeeIds.filter((employeeId) => !previouslyAssigned.has(employeeId));
+          await assertFullTimeOtAssignmentAllowed(newlyAdded, updated.date);
+        }
       } else if (action === 'cancel') {
         if (submissions.length) throw conflict('Assignment with submissions cannot be cancelled');
         if (assignment.status === 'CLOSED') throw conflict('Closed assignment cannot be cancelled');
