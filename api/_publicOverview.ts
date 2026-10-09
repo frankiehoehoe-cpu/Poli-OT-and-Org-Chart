@@ -2,11 +2,13 @@ import { createServerDocument, getServerDocument, listServerDocuments, updateSer
 import { getV13Collections } from './_v13Collections.js';
 import { listEffectiveEmployees } from './_v13Employees.js';
 import {
+  aggregateMixedMonth,
   getEffectiveShiftType,
   getEmploymentType,
   getSingaporeDate,
   isEmployeeEligibleForAssignment,
   type FullTimeOtAvailability,
+  type LegacyOtRecord,
   type ShiftNotice,
   type ShiftType,
   type WorkAssignment,
@@ -38,11 +40,12 @@ export interface PublicAssignment {
 }
 
 export interface PublicOverviewSnapshot {
-  schemaVersion: 2;
+  schemaVersion: 3;
   date: string;
   assignments: PublicAssignment[];
   notices: ShiftNotice[];
   fullTimeOtAvailability: FullTimeOtAvailability[];
+  monthlyFullTimeOtHours: Record<string, number>;
   updatedAt: string;
 }
 
@@ -63,12 +66,13 @@ function effectiveHours(submission: WorkSubmission): number {
 export async function buildPublicOverviewSnapshot(date = getSingaporeDate()): Promise<PublicOverviewSnapshot> {
   const collections = getV13Collections();
   const secondShiftPreviewEnd = addCalendarDays(date, 2);
-  const [assignmentDocuments, submissionDocuments, employees, noticeDocuments, fullTimeAvailabilityDocuments] = await Promise.all([
+  const [assignmentDocuments, submissionDocuments, employees, noticeDocuments, fullTimeAvailabilityDocuments, legacyDocuments] = await Promise.all([
     listServerDocuments<WorkAssignment>(collections.assignments),
     listServerDocuments<WorkSubmission>(collections.submissions),
     listEffectiveEmployees(),
     listServerDocuments<ShiftNotice>(collections.shiftNotices),
-    listServerDocuments<FullTimeOtAvailability>(collections.fullTimeOtAvailability)
+    listServerDocuments<FullTimeOtAvailability>(collections.fullTimeOtAvailability),
+    listServerDocuments<LegacyOtRecord>('overtime')
   ]);
 
   const employeeMap = new Map(employees.map((employee) => [employee.id, employee]));
@@ -138,12 +142,21 @@ export async function buildPublicOverviewSnapshot(date = getSingaporeDate()): Pr
     .map((document) => ({ ...document.data, id: document.id }))
     .filter((item) => item.date >= date);
 
+  const allAssignments = assignmentDocuments.map((document) => ({ ...document.data, id: document.id }));
+  const allSubmissions = submissionDocuments.map((document) => ({ ...document.data, id: document.id }));
+  const legacy = legacyDocuments.map((document) => ({ ...document.data, id: document.id }));
+  const monthlyFullTimeOtHours = Object.fromEntries(
+    aggregateMixedMonth(date.slice(0, 7), legacy, allSubmissions, allAssignments)
+      .map((aggregate) => [aggregate.employeeId, aggregate.fullTimeOtHours])
+  );
+
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     date,
     assignments,
     notices,
     fullTimeOtAvailability,
+    monthlyFullTimeOtHours,
     updatedAt: new Date().toISOString()
   };
 }
@@ -188,7 +201,7 @@ export async function ensureCurrentPublicOverview(): Promise<PublicOverviewSnaps
   const collections = getV13Collections();
   const today = getSingaporeDate();
   const existing = await getServerDocument<PublicOverviewSnapshot>(collections.publicOverview, SNAPSHOT_ID);
-  if (existing?.data?.date === today && existing.data.schemaVersion === 2) {
+  if (existing?.data?.date === today && existing.data.schemaVersion === 3) {
     return { ...existing.data, date: today };
   }
   return rebuildCurrentPublicOverview();
@@ -196,20 +209,22 @@ export async function ensureCurrentPublicOverview(): Promise<PublicOverviewSnaps
 
 export async function updateCurrentOverviewForSubmission(submission: WorkSubmission): Promise<void> {
   const today = getSingaporeDate();
-  if (submission.taskDate !== today) return;
+  const affectsTodayAssignment = submission.taskDate === today;
+  const affectsCurrentMonthOt = submission.employmentTypeSnapshot === 'full-time' && submission.taskDate.slice(0, 7) === today.slice(0, 7);
+  if (!affectsTodayAssignment && !affectsCurrentMonthOt) return;
 
   const collections = getV13Collections();
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const current = await getServerDocument<PublicOverviewSnapshot>(collections.publicOverview, SNAPSHOT_ID);
-    if (!current || current.data.date !== today || current.data.schemaVersion !== 2) {
+    if (!current || current.data.date !== today || current.data.schemaVersion !== 3) {
       await rebuildCurrentPublicOverview();
       return;
     }
 
-    let found = false;
+    let found = !affectsTodayAssignment;
     const assignments = current.data.assignments.map((assignment) => {
-      if (assignment.id !== submission.assignmentId) return assignment;
+      if (!affectsTodayAssignment || assignment.id !== submission.assignmentId) return assignment;
       found = true;
       return {
         ...assignment,
@@ -227,9 +242,15 @@ export async function updateCurrentOverviewForSubmission(submission: WorkSubmiss
       return;
     }
 
+    const monthlyFullTimeOtHours = { ...(current.data.monthlyFullTimeOtHours || {}) };
+    if (affectsCurrentMonthOt) {
+      monthlyFullTimeOtHours[submission.employeeId] = (monthlyFullTimeOtHours[submission.employeeId] || 0) + effectiveHours(submission);
+    }
+
     const next: PublicOverviewSnapshot = {
       ...current.data,
       assignments,
+      monthlyFullTimeOtHours,
       updatedAt: new Date().toISOString()
     };
 
