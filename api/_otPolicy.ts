@@ -2,6 +2,7 @@ import { listServerDocuments } from './_firebaseAdmin.js';
 import { getV13Collections } from './_v13Collections.js';
 import {
   aggregateMixedMonth,
+  isSundayDate,
   MONTHLY_FT_OT_LIMIT_HOURS,
   type LegacyOtRecord,
   type WorkAssignment,
@@ -31,7 +32,7 @@ export async function getMonthlyFullTimeOtHours(employeeId: string, date: string
 }
 
 export async function assertFullTimeOtAssignmentAllowed(employeeIds: string[], date: string): Promise<void> {
-  if (!employeeIds.length) return;
+  if (!employeeIds.length || isSundayDate(date)) return;
   const map = await getMonthlyFullTimeOtHoursMap(date.slice(0, 7));
   const blocked = employeeIds
     .map((employeeId) => ({ employeeId, hours: map.get(employeeId) || 0 }))
@@ -51,6 +52,7 @@ export async function assertFullTimeOtWriteWithinLimit(input: {
   newHours: number;
   replaceExistingHours?: number;
 }): Promise<void> {
+  if (isSundayDate(input.date)) return;
   const currentHours = await getMonthlyFullTimeOtHours(input.employeeId, input.date);
   const replaceExistingHours = Math.max(0, input.replaceExistingHours || 0);
   const projected = currentHours - replaceExistingHours + input.newHours;
