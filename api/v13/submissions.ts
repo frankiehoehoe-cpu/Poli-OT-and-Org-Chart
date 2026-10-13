@@ -184,16 +184,18 @@ export default async function handler(request: Request, response: Response) {
     }
 
     if (request.method === 'POST' && request.body?.action === 'manual-entry') {
-      const session = await requireV13Mutation(request, 'supervisor');
+      const session = await requireV13Mutation(request, 'supervisor', 'manager');
       const employeeId = safeString(request.body?.employeeId, 128);
       const date = safeString(request.body?.date, 10);
       const startTime = safeString(request.body?.startTime, 5);
       const endTime = safeString(request.body?.endTime, 5);
       const hours = Number(request.body?.hours);
+      const requestedWorkstation = safeString(request.body?.actualWorkstation, 200);
+      const reason = safeString(request.body?.reason, 1000);
       if (!employeeId || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime)) {
         throw badRequest('Employee, date, start time and end time are required');
       }
-      if (date > getSingaporeDate()) throw conflict('Supervisor manual entry cannot use a future date');
+      if (date > getSingaporeDate()) throw conflict('Manual entry cannot use a future date');
 
       const employee = await getEffectiveEmployee(employeeId);
       if (!employee || employee.role !== 'employee') throw Object.assign(new Error('Employee not found'), { statusCode: 404 });
@@ -221,7 +223,9 @@ export default async function handler(request: Request, response: Response) {
       const submissionId = deterministicSubmissionId(assignmentId, employeeId);
       const assignmentMode = employmentType === 'part-time' ? 'work-shift' as const : 'ot-task' as const;
       const shiftType = employmentType === 'part-time' ? 'PART_TIME_SHIFT' as const : undefined;
-      const workstation = 'Supervisor Manual Entry / 主管补录';
+      const actorLabel = session.role === 'manager' ? 'Manager' : 'Supervisor';
+      const workstation = requestedWorkstation || `${actorLabel} Manual Entry / ${session.role === 'manager' ? '经理补录' : '主管补录'}`;
+      const entryReason = reason || `${actorLabel} manual entry`;
       const assignment: WorkAssignment = {
         id: assignmentId,
         date,
@@ -232,7 +236,7 @@ export default async function handler(request: Request, response: Response) {
         taskType: 'non-output',
         assignmentMode,
         ...(shiftType ? { shiftType } : {}),
-        targetRequirement: 'Supervisor manual entry / 主管补录',
+        targetRequirement: entryReason,
         status: 'CLOSED',
         assignedEmployeeIds: [employeeId],
         createdBy: session.subject,
@@ -240,8 +244,8 @@ export default async function handler(request: Request, response: Response) {
         updatedAt: now,
         revision: 1,
         completionStatus: 'COMPLETED',
-        actualResult: 'Supervisor manual entry',
-        supervisorNote: 'Supervisor manual entry',
+        actualResult: entryReason,
+        supervisorNote: entryReason,
         closedAt: now,
         closedBy: session.subject,
         manualEntry: true
@@ -263,9 +267,9 @@ export default async function handler(request: Request, response: Response) {
         updatedAt: now,
         correctionHistory: [],
         lateEntry: true,
-        enteredByRole: 'supervisor' as const,
+        enteredByRole: session.role === 'manager' ? 'manager' as const : 'supervisor' as const,
         enteredBy: session.subject,
-        lateEntryReason: 'Supervisor manual entry',
+        lateEntryReason: entryReason,
         lateEnteredAt: now
       };
       const submission: WorkSubmission = employmentType === 'part-time'
