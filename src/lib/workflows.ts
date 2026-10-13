@@ -75,7 +75,7 @@ export interface WorkSubmission {
   correctedBy?: string;
   correctionHistory?: CorrectionHistoryItem[];
   lateEntry?: boolean;
-  enteredByRole?: 'supervisor';
+  enteredByRole?: 'supervisor' | 'manager';
   enteredBy?: string;
   lateEntryReason?: string;
   lateEnteredAt?: string;

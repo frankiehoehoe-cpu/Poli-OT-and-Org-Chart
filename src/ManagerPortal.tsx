@@ -43,7 +43,7 @@ import { MixedMonthAnalytics } from './components/workflow/TaskWorkflow';
 import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
 import { OT_V13_ENABLED } from './lib/v13Flags';
 import { workflowService } from './lib/workflowService';
-import { getEmploymentType, isSundayDate, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from './lib/workflows';
+import { calculateWorkedHours, getEmploymentType, getSingaporeDate, isSundayDate, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from './lib/workflows';
 
 export default function ManagerPortal() {
   const { logout, user } = useAuth();
@@ -78,6 +78,15 @@ export default function ManagerPortal() {
   // Reporting State
   const [selectedMonth, setSelectedMonth] = useState(getSingaporeMonth());
   const [selectedEmployeeSummary, setSelectedEmployeeSummary] = useState<OvertimeSummary | null>(null);
+  const [managerManualOpen, setManagerManualOpen] = useState(false);
+  const [managerManualDate, setManagerManualDate] = useState(getSingaporeDate());
+  const [managerManualStart, setManagerManualStart] = useState('18:00');
+  const [managerManualEnd, setManagerManualEnd] = useState('20:00');
+  const [managerManualHours, setManagerManualHours] = useState('2');
+  const [managerManualWorkstation, setManagerManualWorkstation] = useState('');
+  const [managerManualRemarks, setManagerManualRemarks] = useState('');
+  const [managerManualError, setManagerManualError] = useState('');
+  const [managerManualSaving, setManagerManualSaving] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [signatureType, setSignatureType] = useState<'upload' | 'text' | 'draw' | null>(null);
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
@@ -111,6 +120,21 @@ export default function ManagerPortal() {
   }, [selectedMonth]);
 
   useEffect(() => {
+    if (!selectedEmployeeSummary) return;
+    const refreshed = summaries.find((summary) => summary.employeeId === selectedEmployeeSummary.employeeId);
+    if (
+      refreshed &&
+      (
+        refreshed.totalHours !== selectedEmployeeSummary.totalHours ||
+        refreshed.entryCount !== selectedEmployeeSummary.entryCount ||
+        refreshed.unverifiedCount !== selectedEmployeeSummary.unverifiedCount
+      )
+    ) {
+      setSelectedEmployeeSummary(refreshed);
+    }
+  }, [summaries, selectedEmployeeSummary]);
+
+  useEffect(() => {
     const fetchSupervisorReport = async () => {
       if (selectedEmployeeSummary) {
         const report = await reportService.getMonthlyReport(selectedMonth, selectedEmployeeSummary.employeeId, 'supervisor');
@@ -121,6 +145,62 @@ export default function ManagerPortal() {
     };
     fetchSupervisorReport();
   }, [selectedEmployeeSummary, selectedMonth]);
+
+  const openManagerManualEntry = () => {
+    if (!selectedEmployeeSummary) return;
+    const today = getSingaporeDate();
+    const todayMonth = today.slice(0, 7);
+    const defaultDate = selectedMonth === todayMonth
+      ? today
+      : selectedMonth < todayMonth
+        ? `${selectedMonth}-01`
+        : today;
+    const employee = employees.find((item) => item.id === selectedEmployeeSummary.employeeId);
+    const partTime = employee ? getEmploymentType(employee) === 'part-time' : false;
+    const start = partTime ? '09:00' : '18:00';
+    const end = partTime ? '17:00' : '20:00';
+    setManagerManualDate(defaultDate);
+    setManagerManualStart(start);
+    setManagerManualEnd(end);
+    setManagerManualHours(partTime ? '8' : '2');
+    setManagerManualWorkstation('');
+    setManagerManualRemarks('');
+    setManagerManualError('');
+    setManagerManualOpen(true);
+  };
+
+  const updateManagerManualHours = (start: string, end: string) => {
+    const span = calculateWorkedHours(start, end);
+    if (span === null || !selectedEmployeeSummary) return;
+    const employee = employees.find((item) => item.id === selectedEmployeeSummary.employeeId);
+    const partTime = employee ? getEmploymentType(employee) === 'part-time' : false;
+    const rounded = partTime ? Math.round(span * 4) / 4 : Math.round(span * 2) / 2;
+    setManagerManualHours(String(rounded));
+  };
+
+  const submitManagerManualEntry = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedEmployeeSummary) return;
+    setManagerManualSaving(true);
+    setManagerManualError('');
+    try {
+      await workflowService.manualEntry({
+        employeeId: selectedEmployeeSummary.employeeId,
+        date: managerManualDate,
+        startTime: managerManualStart,
+        endTime: managerManualEnd,
+        hours: Number(managerManualHours),
+        actualWorkstation: managerManualWorkstation.trim() || undefined,
+        reason: managerManualRemarks.trim() || 'Manager manual entry / 经理补录'
+      });
+      await fetchData();
+      setManagerManualOpen(false);
+    } catch (reason) {
+      setManagerManualError(reason instanceof Error ? reason.message : 'Manual entry failed / 补录失败');
+    } finally {
+      setManagerManualSaving(false);
+    }
+  };
 
   const handleEntryClick = (entryId: string, event: React.MouseEvent) => {
     if (event.ctrlKey || event.metaKey) {
@@ -990,6 +1070,15 @@ export default function ManagerPortal() {
                   </button>
 
                   <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={openManagerManualEntry}
+                      disabled={selectedMonth > getSingaporeDate().slice(0, 7)}
+                      className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-orange-700 shadow-sm transition-all hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Manual OT Entry / 补录加班
+                    </button>
                     {selectedMonth < new Date().toISOString().slice(0, 7) && (
                       <button 
                         onClick={() => { window.focus(); window.print(); }}
@@ -1665,6 +1754,171 @@ export default function ManagerPortal() {
           </motion.div>
         </div>
       )}
+
+      {/* Manager Manual Entry Modal */}
+      {managerManualOpen && selectedEmployeeSummary && (() => {
+        const employee = employees.find((item) => item.id === selectedEmployeeSummary.employeeId);
+        const partTime = employee ? getEmploymentType(employee) === 'part-time' : false;
+        const sunday2x = !partTime && isSundayDate(managerManualDate);
+        const [yearValue, monthValue] = selectedMonth.split('-').map(Number);
+        const lastDay = new Date(Date.UTC(yearValue, monthValue, 0)).getUTCDate();
+        const monthMin = `${selectedMonth}-01`;
+        const monthEnd = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`;
+        const today = getSingaporeDate();
+        const maxDate = monthEnd < today ? monthEnd : today;
+        return (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm">
+            <motion.form
+              onSubmit={submitManagerManualEntry}
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="w-full max-w-2xl overflow-hidden rounded-[30px] bg-white shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-900 px-6 py-5 text-white">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-300">MANAGER MANUAL ENTRY / 经理补录</p>
+                  <h3 className="mt-1 text-2xl font-black" translate="no">{selectedEmployeeSummary.employeeName}</h3>
+                  <p className="mt-1 text-xs font-bold text-slate-300">
+                    {partTime ? 'PART-TIME WORK HOURS / 兼职工时' : 'FULL-TIME OT / 全职加班'} · {selectedMonth}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setManagerManualOpen(false)}
+                  className="rounded-xl bg-white/10 p-2 text-white hover:bg-white/20"
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="grid gap-4 p-6 sm:grid-cols-2">
+                <label className="text-sm font-black text-slate-700">
+                  Employee / 员工
+                  <div className="mt-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900" translate="no">
+                    {selectedEmployeeSummary.employeeName}
+                  </div>
+                </label>
+
+                <label className="text-sm font-black text-slate-700">
+                  Date / 日期
+                  <input
+                    type="date"
+                    min={monthMin}
+                    max={maxDate}
+                    value={managerManualDate}
+                    onChange={(event) => setManagerManualDate(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 p-3 font-bold outline-none focus:border-orange-400"
+                    required
+                  />
+                </label>
+
+                <label className="text-sm font-black text-slate-700">
+                  Start Time / 开始时间
+                  <input
+                    type="time"
+                    value={managerManualStart}
+                    onChange={(event) => {
+                      setManagerManualStart(event.target.value);
+                      updateManagerManualHours(event.target.value, managerManualEnd);
+                    }}
+                    className="mt-1 w-full rounded-xl border border-slate-200 p-3 font-bold outline-none focus:border-orange-400"
+                    required
+                  />
+                </label>
+
+                <label className="text-sm font-black text-slate-700">
+                  End Time / 结束时间
+                  <input
+                    type="time"
+                    value={managerManualEnd}
+                    onChange={(event) => {
+                      setManagerManualEnd(event.target.value);
+                      updateManagerManualHours(managerManualStart, event.target.value);
+                    }}
+                    className="mt-1 w-full rounded-xl border border-slate-200 p-3 font-bold outline-none focus:border-orange-400"
+                    required
+                  />
+                </label>
+
+                <label className="text-sm font-black text-slate-700">
+                  {partTime ? 'Worked Hours / 工作时长' : 'OT Hours / 加班时长'}
+                  <input
+                    type="number"
+                    min={partTime ? '0.25' : '0.5'}
+                    max={partTime ? '24' : '12'}
+                    step={partTime ? '0.25' : '0.5'}
+                    value={managerManualHours}
+                    onChange={(event) => setManagerManualHours(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 p-3 font-black text-indigo-700 outline-none focus:border-orange-400"
+                    required
+                  />
+                </label>
+
+                <label className="text-sm font-black text-slate-700">
+                  Workstation / 工位
+                  <input
+                    type="text"
+                    value={managerManualWorkstation}
+                    onChange={(event) => setManagerManualWorkstation(event.target.value)}
+                    placeholder="e.g. Packing / 包装"
+                    className="mt-1 w-full rounded-xl border border-slate-200 p-3 font-bold outline-none focus:border-orange-400"
+                  />
+                </label>
+
+                <label className="text-sm font-black text-slate-700 sm:col-span-2">
+                  Remarks / 备注
+                  <textarea
+                    value={managerManualRemarks}
+                    onChange={(event) => setManagerManualRemarks(event.target.value)}
+                    placeholder="Reason for manual entry / 补录原因"
+                    rows={3}
+                    className="mt-1 w-full rounded-xl border border-slate-200 p-3 font-bold outline-none focus:border-orange-400"
+                  />
+                </label>
+
+                <div className={`sm:col-span-2 rounded-2xl border p-4 text-sm font-bold ${
+                  sunday2x
+                    ? 'border-violet-200 bg-violet-50 text-violet-800'
+                    : partTime
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : 'border-indigo-200 bg-indigo-50 text-indigo-800'
+                }`}>
+                  {partTime
+                    ? 'This entry records Part-Time worked hours / 此记录计为兼职工作时长'
+                    : sunday2x
+                      ? 'Sunday OT = 2.0× · Excluded from the 72h 1.5× limit / 星期日加班=2.0倍，不计入72小时'
+                      : `1.5× OT · Current monthly 1.5× total: ${selectedEmployeeSummary.totalHours.toFixed(1)}h / 当前本月1.5倍累计`
+                  }
+                </div>
+
+                {managerManualError && (
+                  <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+                    {managerManualError}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 border-t border-slate-100 bg-slate-50 p-5">
+                <button
+                  type="button"
+                  onClick={() => setManagerManualOpen(false)}
+                  className="flex-1 rounded-xl border border-slate-200 bg-white p-3 font-black text-slate-600"
+                >
+                  Cancel / 取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={managerManualSaving || !managerManualDate || !managerManualHours}
+                  className="flex-[2] rounded-xl bg-orange-500 p-3 font-black text-white shadow-lg shadow-orange-100 transition hover:bg-orange-600 disabled:opacity-40"
+                >
+                  {managerManualSaving ? 'Saving... / 保存中...' : 'Save Manual Entry / 保存补录'}
+                </button>
+              </div>
+            </motion.form>
+          </div>
+        );
+      })()}
 
       {/* Signature Modal */}
       {isSignModalOpen && (
