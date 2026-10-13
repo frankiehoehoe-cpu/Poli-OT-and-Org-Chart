@@ -40,7 +40,7 @@ export interface PublicAssignment {
 }
 
 export interface PublicOverviewSnapshot {
-  schemaVersion: 3;
+  schemaVersion: 4;
   date: string;
   assignments: PublicAssignment[];
   notices: ShiftNotice[];
@@ -151,7 +151,7 @@ export async function buildPublicOverviewSnapshot(date = getSingaporeDate()): Pr
   );
 
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     date,
     assignments,
     notices,
@@ -201,7 +201,7 @@ export async function ensureCurrentPublicOverview(): Promise<PublicOverviewSnaps
   const collections = getV13Collections();
   const today = getSingaporeDate();
   const existing = await getServerDocument<PublicOverviewSnapshot>(collections.publicOverview, SNAPSHOT_ID);
-  if (existing?.data?.date === today && existing.data.schemaVersion === 3) {
+  if (existing?.data?.date === today && existing.data.schemaVersion === 4) {
     return { ...existing.data, date: today };
   }
   return rebuildCurrentPublicOverview();
@@ -217,7 +217,7 @@ export async function updateCurrentOverviewForSubmission(submission: WorkSubmiss
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const current = await getServerDocument<PublicOverviewSnapshot>(collections.publicOverview, SNAPSHOT_ID);
-    if (!current || current.data.date !== today || current.data.schemaVersion !== 3) {
+    if (!current || current.data.date !== today || current.data.schemaVersion !== 4) {
       await rebuildCurrentPublicOverview();
       return;
     }
