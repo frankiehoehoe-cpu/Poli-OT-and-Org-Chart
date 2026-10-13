@@ -43,7 +43,7 @@ import { MixedMonthAnalytics } from './components/workflow/TaskWorkflow';
 import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
 import { OT_V13_ENABLED } from './lib/v13Flags';
 import { workflowService } from './lib/workflowService';
-import { getEmploymentType, isSundayDate, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from './lib/workflows';
+import { calculateWorkedHours, getEmploymentType, getSingaporeDate, isSundayDate, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from './lib/workflows';
 
 export default function ManagerPortal() {
   const { logout, user } = useAuth();
@@ -78,6 +78,15 @@ export default function ManagerPortal() {
   // Reporting State
   const [selectedMonth, setSelectedMonth] = useState(getSingaporeMonth());
   const [selectedEmployeeSummary, setSelectedEmployeeSummary] = useState<OvertimeSummary | null>(null);
+  const [managerManualOpen, setManagerManualOpen] = useState(false);
+  const [managerManualDate, setManagerManualDate] = useState(getSingaporeDate());
+  const [managerManualStart, setManagerManualStart] = useState('18:00');
+  const [managerManualEnd, setManagerManualEnd] = useState('20:00');
+  const [managerManualHours, setManagerManualHours] = useState('2');
+  const [managerManualWorkstation, setManagerManualWorkstation] = useState('');
+  const [managerManualRemarks, setManagerManualRemarks] = useState('');
+  const [managerManualError, setManagerManualError] = useState('');
+  const [managerManualSaving, setManagerManualSaving] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [signatureType, setSignatureType] = useState<'upload' | 'text' | 'draw' | null>(null);
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
@@ -111,6 +120,21 @@ export default function ManagerPortal() {
   }, [selectedMonth]);
 
   useEffect(() => {
+    if (!selectedEmployeeSummary) return;
+    const refreshed = summaries.find((summary) => summary.employeeId === selectedEmployeeSummary.employeeId);
+    if (
+      refreshed &&
+      (
+        refreshed.totalHours !== selectedEmployeeSummary.totalHours ||
+        refreshed.entryCount !== selectedEmployeeSummary.entryCount ||
+        refreshed.unverifiedCount !== selectedEmployeeSummary.unverifiedCount
+      )
+    ) {
+      setSelectedEmployeeSummary(refreshed);
+    }
+  }, [summaries, selectedEmployeeSummary]);
+
+  useEffect(() => {
     const fetchSupervisorReport = async () => {
       if (selectedEmployeeSummary) {
         const report = await reportService.getMonthlyReport(selectedMonth, selectedEmployeeSummary.employeeId, 'supervisor');
@@ -121,6 +145,62 @@ export default function ManagerPortal() {
     };
     fetchSupervisorReport();
   }, [selectedEmployeeSummary, selectedMonth]);
+
+  const openManagerManualEntry = () => {
+    if (!selectedEmployeeSummary) return;
+    const today = getSingaporeDate();
+    const todayMonth = today.slice(0, 7);
+    const defaultDate = selectedMonth === todayMonth
+      ? today
+      : selectedMonth < todayMonth
+        ? `${selectedMonth}-01`
+        : today;
+    const employee = employees.find((item) => item.id === selectedEmployeeSummary.employeeId);
+    const partTime = employee ? getEmploymentType(employee) === 'part-time' : false;
+    const start = partTime ? '09:00' : '18:00';
+    const end = partTime ? '17:00' : '20:00';
+    setManagerManualDate(defaultDate);
+    setManagerManualStart(start);
+    setManagerManualEnd(end);
+    setManagerManualHours(partTime ? '8' : '2');
+    setManagerManualWorkstation('');
+    setManagerManualRemarks('');
+    setManagerManualError('');
+    setManagerManualOpen(true);
+  };
+
+  const updateManagerManualHours = (start: string, end: string) => {
+    const span = calculateWorkedHours(start, end);
+    if (span === null || !selectedEmployeeSummary) return;
+    const employee = employees.find((item) => item.id === selectedEmployeeSummary.employeeId);
+    const partTime = employee ? getEmploymentType(employee) === 'part-time' : false;
+    const rounded = partTime ? Math.round(span * 4) / 4 : Math.round(span * 2) / 2;
+    setManagerManualHours(String(rounded));
+  };
+
+  const submitManagerManualEntry = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedEmployeeSummary) return;
+    setManagerManualSaving(true);
+    setManagerManualError('');
+    try {
+      await workflowService.manualEntry({
+        employeeId: selectedEmployeeSummary.employeeId,
+        date: managerManualDate,
+        startTime: managerManualStart,
+        endTime: managerManualEnd,
+        hours: Number(managerManualHours),
+        actualWorkstation: managerManualWorkstation.trim() || undefined,
+        reason: managerManualRemarks.trim() || 'Manager manual entry / 经理补录'
+      });
+      await fetchData();
+      setManagerManualOpen(false);
+    } catch (reason) {
+      setManagerManualError(reason instanceof Error ? reason.message : 'Manual entry failed / 补录失败');
+    } finally {
+      setManagerManualSaving(false);
+    }
+  };
 
   const handleEntryClick = (entryId: string, event: React.MouseEvent) => {
     if (event.ctrlKey || event.metaKey) {
