@@ -43,7 +43,7 @@ import { MixedMonthAnalytics } from './components/workflow/TaskWorkflow';
 import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
 import { OT_V13_ENABLED } from './lib/v13Flags';
 import { workflowService } from './lib/workflowService';
-import { getEmploymentType, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from './lib/workflows';
+import { getEmploymentType, isSundayDate, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from './lib/workflows';
 
 export default function ManagerPortal() {
   const { logout, user } = useAuth();
@@ -433,7 +433,6 @@ export default function ManagerPortal() {
       .filter((entry) =>
         entry.employeeId === employeeId &&
         entry.date.startsWith(selectedMonth) &&
-        entry.multiplier !== 2.0 &&
         !authoritativeV13Days.has(entry.date)
       )
       .map((entry) => ({
@@ -443,7 +442,9 @@ export default function ManagerPortal() {
         startTime: entry.startTime,
         endTime: entry.endTime,
         totalHours: entry.totalHours,
-        typeLabel: entry.multiplier === 2.0 ? '2.0' : '1.5 (Legacy)',
+        typeLabel: isSundayDate(entry.date) ? '2.0× SUNDAY / 星期日' : entry.multiplier === 2.0 ? '2.0× OT / 加班' : '1.5× OT / 加班',
+        multiplierValue: isSundayDate(entry.date) || entry.multiplier === 2.0 ? 2 : 1.5,
+        countsToward72: !isSundayDate(entry.date) && entry.multiplier !== 2.0,
         verified: entry.verified,
         status: entry.status,
         statusLabel: entry.verified ? 'VERIFIED / 已核实' : entry.status === 'rejected' ? 'REJECTED / 已拒绝' : 'PENDING / 待核实',
@@ -483,7 +484,13 @@ export default function ManagerPortal() {
           startTime,
           endTime,
           totalHours,
-          typeLabel: isPartTime ? 'PT WORKED / 兼职工时' : 'V1.3 OT / 加班',
+          typeLabel: isPartTime
+            ? 'PT WORKED / 兼职工时'
+            : isSundayDate(submission.taskDate)
+              ? '2.0× SUNDAY / 星期日'
+              : '1.5× OT / 加班',
+          multiplierValue: isPartTime ? null : isSundayDate(submission.taskDate) ? 2 : 1.5,
+          countsToward72: !isPartTime && !isSundayDate(submission.taskDate),
           verified: true,
           status: 'verified' as const,
           statusLabel,
@@ -500,6 +507,13 @@ export default function ManagerPortal() {
       a.date.localeCompare(b.date) || a.source.localeCompare(b.source)
     );
   }, [selectedEmployeeSummary, selectedMonth, entries, v13Assignments, v13Submissions]);
+
+  const selectedDoubleTimeHours = React.useMemo(
+    () => selectedReportRows
+      .filter((row) => row.multiplierValue === 2)
+      .reduce((total, row) => total + row.totalHours, 0),
+    [selectedReportRows]
+  );
 
   const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1000,7 +1014,7 @@ export default function ManagerPortal() {
                     <div>
                       <h4 className="text-2xl font-black text-slate-900" translate="no">{selectedEmployeeSummary.employeeName}</h4>
                       <p className="text-slate-500 font-bold uppercase tracking-widest text-xs mt-1">
-                        Detailed Report for {selectedMonth} <span className="text-slate-300 mx-2">|</span> {selectedEmployeeSummary.totalHours.toFixed(1)}h Authoritative Total
+                        Detailed Report for {selectedMonth} <span className="text-slate-300 mx-2">|</span> {selectedEmployeeSummary.totalHours.toFixed(1)}h 1.5× OT TOTAL <span className="text-slate-300 mx-2">|</span> {selectedDoubleTimeHours.toFixed(1)}h 2.0× OT
                       </p>
                     </div>
                     {confirmedEmployees.has(selectedEmployeeSummary.employeeId) && (
@@ -1055,9 +1069,11 @@ export default function ManagerPortal() {
                               </td>
                               <td className="px-8 py-5">
                                 <span className={`rounded-lg px-2 py-0.5 text-xs font-bold ${
-                                  row.source === 'v13'
-                                    ? 'bg-indigo-50 text-indigo-700'
-                                    : 'bg-slate-100 text-slate-600'
+                                  row.multiplierValue === 2
+                                    ? 'bg-violet-100 text-violet-700'
+                                    : row.source === 'v13'
+                                      ? 'bg-indigo-50 text-indigo-700'
+                                      : 'bg-slate-100 text-slate-600'
                                 }`}>
                                   {row.typeLabel}
                                 </span>
