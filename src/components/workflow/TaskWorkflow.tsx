@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Role, UserProfile } from '../../types';
-import { calculateWorkedHours, getEmploymentType, getMonthlyFtOtRisk, getSingaporeDate, getSingaporeTime, isEmployeeEligibleForAssignment, isFullTimeOtSubmissionOpen, isPartTimeWorkSubmissionOpen, type EmployeeMonthAggregate, type FullTimeOtAvailability, type PartTimeAvailability, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../lib/workflows';
+import { calculateWorkedHours, getEmploymentType, getMonthlyFtOtRisk, getSingaporeDate, getSingaporeTime, isEmployeeEligibleForAssignment, isFullTimeOtSubmissionOpen, isPartTimeWorkSubmissionOpen, isSundayDate, type EmployeeMonthAggregate, type FullTimeOtAvailability, type PartTimeAvailability, type ShiftType, type WorkAssignment, type WorkSubmission } from '../../lib/workflows';
 import { workflowService } from '../../lib/workflowService';
 
 const workstations = ['Mixing / 搅拌', 'Oven Drying / 烘干', 'Grinding / 研磨', 'Encapsulation / 进胶囊', 'Polishing / 抛光', 'Blistering / 压板', 'Print Code / 打码', 'Sacheting / 茶袋包装', 'Packing / 包装', 'Cleaning / 清洁', 'Changeover / 转线', 'Other Production Work / 其他生产工作'];
@@ -212,8 +212,9 @@ function AssignmentEditor({ employees, assignments, availability, fullTimeAvaila
       if (mode !== 'ot-task') return 0;
       const aRisk = getMonthlyFtOtRisk(otHoursByEmployee.get(a.id) || 0);
       const bRisk = getMonthlyFtOtRisk(otHoursByEmployee.get(b.id) || 0);
-      const aLimit = aRisk.level === 'LIMIT_REACHED';
-      const bLimit = bRisk.level === 'LIMIT_REACHED';
+      const sunday2x = isSundayDate(form.date);
+      const aLimit = !sunday2x && aRisk.level === 'LIMIT_REACHED';
+      const bLimit = !sunday2x && bRisk.level === 'LIMIT_REACHED';
       if (aLimit !== bLimit) return Number(aLimit) - Number(bLimit);
       const aAvailable = fullTimeAvailability.some((item) => item.employeeId === a.id && item.date === form.date);
       const bAvailable = fullTimeAvailability.some((item) => item.employeeId === b.id && item.date === form.date);
@@ -237,7 +238,7 @@ function AssignmentEditor({ employees, assignments, availability, fullTimeAvaila
     <label className="text-sm font-bold">Workstation<select className="mt-1 w-full rounded-xl border p-3" value={form.workstation} onChange={(event) => setForm({ ...form, workstation: event.target.value })}>{workstations.map((station) => <option key={station}>{station}</option>)}</select></label>
     <Field label="Planned Start"><input type="time" value={form.plannedStart} onChange={(event) => setForm({ ...form, plannedStart: event.target.value })}/></Field>
     <Field label="Planned End"><input type="time" value={form.plannedEnd} onChange={(event) => setForm({ ...form, plannedEnd: event.target.value })}/></Field>
-    <div className="sm:col-span-2"><Field label="Requirement"><textarea required value={form.targetRequirement} onChange={(event) => setForm({ ...form, targetRequirement: event.target.value })}/></Field><p className="mt-3 text-sm font-black">ASSIGNED EMPLOYEES</p><p className="mb-2 text-xs font-bold text-slate-500">Employees already assigned to another task on this date are hidden. Full-Time employees at 72h monthly OT remain visible but cannot be newly selected / 当天已安排员工不会重复显示；已达72小时员工会保留显示但不可新增选择。</p>{riskLoading && <p className="mb-2 text-xs font-black text-indigo-600">Checking monthly OT limits... / 正在检查本月加班上限...</p>}{eligible.map((employee) => {
+    <div className="sm:col-span-2"><Field label="Requirement"><textarea required value={form.targetRequirement} onChange={(event) => setForm({ ...form, targetRequirement: event.target.value })}/></Field><p className="mt-3 text-sm font-black">ASSIGNED EMPLOYEES</p><p className="mb-2 text-xs font-bold text-slate-500">{mode === 'ot-task' && isSundayDate(form.date) ? 'Sunday OT is 2.0× and does not count toward the 72h 1.5× limit / 星期日加班为2.0倍，不计入72小时1.5倍上限。' : 'Employees already assigned to another task on this date are hidden. Full-Time employees at 72h monthly 1.5× OT remain visible but cannot be newly selected / 当天已安排员工不会重复显示；已达72小时1.5倍上限的员工会保留显示但不可新增选择。'}</p>{riskLoading && <p className="mb-2 text-xs font-black text-indigo-600">Checking monthly OT limits... / 正在检查本月加班上限...</p>}{eligible.map((employee) => {
       const partTimeAvailabilityMarked = mode === 'work-shift' && shiftType === 'PART_TIME_SHIFT'
         ? availability.some((item) => item.employeeId === employee.id && item.date === form.date)
         : false;
@@ -246,8 +247,9 @@ function AssignmentEditor({ employees, assignments, availability, fullTimeAvaila
         : false;
       const monthlyOtHours = mode === 'ot-task' ? (otHoursByEmployee.get(employee.id) || 0) : 0;
       const otRisk = getMonthlyFtOtRisk(monthlyOtHours);
+      const sunday2x = mode === 'ot-task' && isSundayDate(form.date);
       const originallyAssigned = Boolean(assignment?.assignedEmployeeIds.includes(employee.id));
-      const blockedByLimit = mode === 'ot-task' && otRisk.level === 'LIMIT_REACHED' && !originallyAssigned;
+      const blockedByLimit = mode === 'ot-task' && !sunday2x && otRisk.level === 'LIMIT_REACHED' && !originallyAssigned;
       const riskRowClass = otRisk.level === 'LIMIT_REACHED'
         ? 'border border-rose-200 bg-rose-50'
         : otRisk.level === 'CRITICAL'
@@ -257,7 +259,7 @@ function AssignmentEditor({ employees, assignments, availability, fullTimeAvaila
             : fullTimeOtAvailable
               ? 'bg-emerald-50'
               : '';
-      return <label key={employee.id} className={`flex min-h-11 items-center gap-2 rounded-xl px-2 ${riskRowClass} ${blockedByLimit ? 'cursor-not-allowed opacity-80' : ''}`}><input type="checkbox" disabled={blockedByLimit || riskLoading} checked={selected.includes(employee.id)} onChange={() => setSelected((current) => current.includes(employee.id) ? current.filter((id) => id !== employee.id) : [...current, employee.id])}/><span className={blockedByLimit ? 'font-black text-rose-900' : ''}>{employee.name}</span><div className="ml-auto flex flex-wrap items-center justify-end gap-1">{mode === 'ot-task' && otRisk.level === 'LIMIT_REACHED' && <span className="rounded-full bg-rose-700 px-2 py-1 text-[10px] font-black text-white">OT LIMIT REACHED / 已达上限 · {monthlyOtHours.toFixed(1)}/72h</span>}{mode === 'ot-task' && otRisk.level === 'CRITICAL' && <span className="rounded-full bg-red-100 px-2 py-1 text-[10px] font-black text-red-700">CRITICAL · {monthlyOtHours.toFixed(1)}/72h</span>}{mode === 'ot-task' && otRisk.level === 'WATCH' && <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">WATCH · {monthlyOtHours.toFixed(1)}/72h</span>}{mode === 'ot-task' && otRisk.level !== 'LIMIT_REACHED' && <span className={`rounded-full px-2 py-1 text-[10px] font-black ${fullTimeOtAvailable ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{fullTimeOtAvailable ? 'AVAILABLE / 可加班' : 'NOT PLANNED / 未计划'}</span>}{mode === 'work-shift' && shiftType === 'PART_TIME_SHIFT' && <span className={`rounded-full px-2 py-1 text-[10px] font-black ${partTimeAvailabilityMarked ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{partTimeAvailabilityMarked ? 'AVAILABLE / 可上班' : 'NOT MARKED / 未标可上班'}</span>}</div></label>;
+      return <label key={employee.id} className={`flex min-h-11 items-center gap-2 rounded-xl px-2 ${riskRowClass} ${blockedByLimit ? 'cursor-not-allowed opacity-80' : ''}`}><input type="checkbox" disabled={blockedByLimit || riskLoading} checked={selected.includes(employee.id)} onChange={() => setSelected((current) => current.includes(employee.id) ? current.filter((id) => id !== employee.id) : [...current, employee.id])}/><span className={blockedByLimit ? 'font-black text-rose-900' : ''}>{employee.name}</span><div className="ml-auto flex flex-wrap items-center justify-end gap-1">{mode === 'ot-task' && otRisk.level === 'LIMIT_REACHED' && <span className={`rounded-full px-2 py-1 text-[10px] font-black ${sunday2x ? 'bg-violet-100 text-violet-700' : 'bg-rose-700 text-white'}`}>{sunday2x ? `SUNDAY 2.0× ALLOWED / 星期日可安排 · 1.5× ${monthlyOtHours.toFixed(1)}/72h` : `OT LIMIT REACHED / 已达上限 · ${monthlyOtHours.toFixed(1)}/72h`}</span>}{mode === 'ot-task' && otRisk.level === 'CRITICAL' && <span className="rounded-full bg-red-100 px-2 py-1 text-[10px] font-black text-red-700">CRITICAL · {monthlyOtHours.toFixed(1)}/72h</span>}{mode === 'ot-task' && otRisk.level === 'WATCH' && <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">WATCH · {monthlyOtHours.toFixed(1)}/72h</span>}{mode === 'ot-task' && otRisk.level !== 'LIMIT_REACHED' && <span className={`rounded-full px-2 py-1 text-[10px] font-black ${fullTimeOtAvailable ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{fullTimeOtAvailable ? 'AVAILABLE / 可加班' : 'NOT PLANNED / 未计划'}</span>}{mode === 'work-shift' && shiftType === 'PART_TIME_SHIFT' && <span className={`rounded-full px-2 py-1 text-[10px] font-black ${partTimeAvailabilityMarked ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{partTimeAvailabilityMarked ? 'AVAILABLE / 可上班' : 'NOT MARKED / 未标可上班'}</span>}</div></label>;
     })}</div>
     {error && <p className="text-sm font-bold text-red-700 sm:col-span-2">{error}</p>}
     <div className="flex gap-2 sm:col-span-2"><button type="button" className="flex-1 rounded-xl border p-3 font-bold" onClick={close}>Cancel</button><button disabled={!selected.length} className="flex-1 rounded-xl bg-indigo-600 p-3 font-black text-white disabled:opacity-40">Save</button></div>

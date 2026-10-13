@@ -25,7 +25,7 @@ export interface PublicAssignment {
 }
 
 export interface PublicOverviewResponse {
-  schemaVersion: 3;
+  schemaVersion: 4;
   date: string;
   assignments: PublicAssignment[];
   notices: ShiftNotice[];

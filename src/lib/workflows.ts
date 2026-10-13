@@ -135,8 +135,10 @@ export interface EmployeeMonthAggregate {
   legacyOtHours: number;
   v13OtHours: number;
   fullTimeOtHours: number;
+  doubleTimeOtHours: number;
   partTimeWorkedHours: number;
   otEntryCount: number;
+  doubleTimeEntryCount: number;
   partTimeSubmissionCount: number;
 }
 
@@ -214,6 +216,12 @@ export const isPartTimeWorkSubmissionOpen = (
 
 export const deterministicSubmissionId = (assignmentId: string, employeeId: string) =>
   `${assignmentId}__${employeeId}`;
+
+export function isSundayDate(date: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 0;
+}
 
 export const getSingaporeDate = (date = new Date()): string => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -329,7 +337,7 @@ export function aggregateMixedMonth(
   const ensure = (id: string, name: string) => {
     const existing = values.get(id);
     if (existing) return existing;
-    const created = { employeeId: id, employeeName: name, legacyOtHours: 0, v13OtHours: 0, fullTimeOtHours: 0, partTimeWorkedHours: 0, otEntryCount: 0, partTimeSubmissionCount: 0 };
+    const created = { employeeId: id, employeeName: name, legacyOtHours: 0, v13OtHours: 0, fullTimeOtHours: 0, doubleTimeOtHours: 0, partTimeWorkedHours: 0, otEntryCount: 0, doubleTimeEntryCount: 0, partTimeSubmissionCount: 0 };
     values.set(id, created);
     return created;
   };
@@ -347,10 +355,15 @@ export function aggregateMixedMonth(
 
   legacy.filter((entry) =>
     entry.date.startsWith(month) &&
-    entry.multiplier !== 2 &&
     !authoritativeV13OtDays.has(`${entry.employeeId}:${entry.date}`)
   ).forEach((entry) => {
     const aggregate = ensure(entry.employeeId, entry.employeeName);
+    const isDoubleTime = entry.multiplier === 2 || isSundayDate(entry.date);
+    if (isDoubleTime) {
+      aggregate.doubleTimeOtHours += entry.totalHours;
+      aggregate.doubleTimeEntryCount += 1;
+      return;
+    }
     aggregate.legacyOtHours += entry.totalHours;
     aggregate.fullTimeOtHours += entry.totalHours;
     aggregate.otEntryCount += 1;
@@ -362,9 +375,14 @@ export function aggregateMixedMonth(
       aggregate.partTimeSubmissionCount += 1;
     } else {
       const hours = submission.effectiveOtHours ?? submission.originalOtHours ?? 0;
-      aggregate.v13OtHours += hours;
-      aggregate.fullTimeOtHours += hours;
-      aggregate.otEntryCount += 1;
+      if (isSundayDate(submission.taskDate)) {
+        aggregate.doubleTimeOtHours += hours;
+        aggregate.doubleTimeEntryCount += 1;
+      } else {
+        aggregate.v13OtHours += hours;
+        aggregate.fullTimeOtHours += hours;
+        aggregate.otEntryCount += 1;
+      }
     }
   });
   return [...values.values()].sort((left, right) => left.employeeName.localeCompare(right.employeeName));
