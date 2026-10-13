@@ -1153,11 +1153,21 @@ export default function ManagerPortal() {
                       </tbody>
                       <tfoot>
                         <tr className="bg-slate-50/50">
-                          <td colSpan={2} className="px-8 py-6 text-sm font-black text-slate-400 uppercase tracking-widest text-right">
-                             Monthly Total / 月总数
+                          <td colSpan={2} className="px-8 py-5 text-sm font-black text-slate-400 uppercase tracking-widest text-right">
+                             1.5× OT Total / 1.5倍月总数
                           </td>
-                          <td colSpan={2} className="px-8 py-6 font-black text-2xl text-indigo-600">
+                          <td colSpan={2} className="px-8 py-5 font-black text-2xl text-indigo-600">
                              {selectedEmployeeSummary.totalHours.toFixed(1)}h
+                             <span className="ml-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Counts toward 72h / 计入72小时</span>
+                          </td>
+                        </tr>
+                        <tr className="bg-violet-50/40">
+                          <td colSpan={2} className="px-8 py-4 text-sm font-black text-violet-500 uppercase tracking-widest text-right">
+                             2.0× OT / 2.0倍加班
+                          </td>
+                          <td colSpan={2} className="px-8 py-4 font-black text-xl text-violet-700">
+                             {selectedDoubleTimeHours.toFixed(1)}h
+                             <span className="ml-2 text-[10px] font-black uppercase tracking-widest text-violet-400">Excluded from 72h / 不计入72小时</span>
                           </td>
                         </tr>
                       </tfoot>
