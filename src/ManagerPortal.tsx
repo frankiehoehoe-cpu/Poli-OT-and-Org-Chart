@@ -96,7 +96,8 @@ export default function ManagerPortal() {
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
   const [typedName, setTypedName] = useState('');
   const [confirmedEmployees, setConfirmedEmployees] = useState<Set<string>>(new Set());
-  const [employeeSignatures, setEmployeeSignatures] = useState<Record<string, { data: string, type: 'upload' | 'text' | 'draw', createdAt?: any }>>({});
+  // Records in this state are Manager-signed per-employee monthly approvals (not employee signatures).
+  const [employeeSignatures, setEmployeeSignatures] = useState<Record<string, { data: string, type: 'upload' | 'text' | 'draw', createdAt?: any, signedBy?: string }>>({});
   
   // Multi-selection state for reporting
   const [selectedEntryIds, setSelectedEntryIds] = useState<Set<string>>(new Set());
@@ -307,12 +308,12 @@ export default function ManagerPortal() {
   const fetchManagerConfirmations = async () => {
     const reports = await reportService.getAllMonthlyReportsForMonth(selectedMonth, 'manager');
     const confirmed = new Set<string>();
-    const sigs: Record<string, { data: string, type: 'upload' | 'text' | 'draw', createdAt?: any }> = {};
+    const sigs: Record<string, { data: string, type: 'upload' | 'text' | 'draw', createdAt?: any, signedBy?: string }> = {};
     
     reports.forEach((r: any) => {
       if (r.employeeId !== 'MANAGER_GLOBAL') {
         confirmed.add(r.employeeId);
-        sigs[r.employeeId] = { data: r.signature, type: r.type, createdAt: r.createdAt };
+        sigs[r.employeeId] = { data: r.signature, type: r.type, createdAt: r.createdAt, signedBy: r.signedBy };
       }
     });
     
@@ -382,7 +383,7 @@ export default function ManagerPortal() {
     setConfirmedEmployees(prev => new Set(prev).add(employeeId));
     setEmployeeSignatures(prev => ({
       ...prev,
-      [employeeId]: { data: signature, type: signatureType }
+      [employeeId]: { data: signature, type: signatureType, signedBy: user?.name || 'Manager' }
     }));
     setIsSubmitting(false);
   };
@@ -2229,9 +2230,9 @@ export default function ManagerPortal() {
           onePointFiveHours={selectedEmployeeSummary.totalHours}
           doubleTimeHours={selectedDoubleTimeHours}
           confirmed={confirmedEmployees.has(selectedEmployeeSummary.employeeId)}
-          employeeSignature={employeeSignatures[selectedEmployeeSummary.employeeId] || (
-            signature ? { data: signature, type: signatureType || 'draw' } : null
-          )}
+          managerSignature={confirmedEmployees.has(selectedEmployeeSummary.employeeId)
+            ? employeeSignatures[selectedEmployeeSummary.employeeId] || null
+            : null}
           supervisorApproval={supervisorReport}
         />
       )}

@@ -11,9 +11,10 @@ export interface MonthlyOtPrintRow {
   remarks: string;
 }
 
-interface PrintSignature {
+interface ManagerSignature {
   data: string;
   type: string;
+  signedBy?: string;
 }
 
 interface SupervisorApproval {
@@ -29,7 +30,7 @@ interface MonthlyOtPrintReportProps {
   onePointFiveHours: number;
   doubleTimeHours: number;
   confirmed: boolean;
-  employeeSignature?: PrintSignature | null;
+  managerSignature?: ManagerSignature | null;
   supervisorApproval?: SupervisorApproval | null;
 }
 
@@ -47,7 +48,7 @@ function timeLabel(value: string): string {
   return `${String(hours % 12 || 12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${hours >= 12 ? 'PM' : 'AM'}`;
 }
 
-function SignatureMark({ data, type }: PrintSignature) {
+function SignatureMark({ data, type }: { data: string; type: string }) {
   if (!data) return <span className="ot-print-signature-pending">Awaiting signature / 待签名</span>;
   if (type === 'text') {
     return <span className="ot-print-signature-text" translate="no">{data}</span>;
@@ -66,7 +67,7 @@ export default function MonthlyOtPrintReport({
   onePointFiveHours,
   doubleTimeHours,
   confirmed,
-  employeeSignature,
+  managerSignature,
   supervisorApproval,
 }: MonthlyOtPrintReportProps) {
   const printDensity = rows.length <= 22
@@ -158,14 +159,14 @@ export default function MonthlyOtPrintReport({
             <p className="ot-print-signature-status">{supervisorApproval?.signature ? 'SIGNED / 已签署' : 'PENDING / 待签署'}</p>
           </div>
           <div className="ot-print-signature-box">
-            <p className="ot-print-signature-title">EMPLOYEE / 员工</p>
+            <p className="ot-print-signature-title">MANAGER / 经理</p>
             <div className="ot-print-signature-space">
-              {employeeSignature?.data
-                ? <SignatureMark data={employeeSignature.data} type={employeeSignature.type} />
-                : <span className="ot-print-signature-pending">Awaiting signature / 待签名</span>}
+              {confirmed && managerSignature?.data
+                ? <SignatureMark data={managerSignature.data} type={managerSignature.type} />
+                : <span className="ot-print-signature-pending">Awaiting manager signature / 待经理签名</span>}
             </div>
-            <p className="ot-print-signature-caption" translate="no">{employeeName}</p>
-            <p className="ot-print-signature-status">{confirmed && employeeSignature?.data ? 'CONFIRMED / 已确认' : 'PENDING / 待确认'}</p>
+            <p className="ot-print-signature-caption" translate="no">{managerSignature?.signedBy || 'Manager Signature / 经理签名'}</p>
+            <p className="ot-print-signature-status">{confirmed && managerSignature?.data ? 'SIGNED / 已签署' : 'PENDING / 待签署'}</p>
           </div>
         </div>
       </div>
