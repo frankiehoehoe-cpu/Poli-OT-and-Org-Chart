@@ -69,8 +69,14 @@ export default function MonthlyOtPrintReport({
   employeeSignature,
   supervisorApproval,
 }: MonthlyOtPrintReportProps) {
+  const printDensity = rows.length <= 22
+    ? 'ot-print-fit-page ot-print-density-regular'
+    : rows.length <= 31
+      ? 'ot-print-fit-page ot-print-density-tight'
+      : 'ot-print-density-flow';
+
   return (
-    <section className="ot-monthly-print-document" aria-label="Monthly OT report / 月度加班报告">
+    <section className={`ot-monthly-print-document ${printDensity}`} aria-label="Monthly OT report / 月度加班报告">
       <div className="ot-print-heading">
         <div>
           <p className="ot-print-kicker">OT PRO · MONTHLY OVERTIME REPORT / 月度加班报告</p>
