@@ -40,6 +40,7 @@ import OrgChart from './components/OrgChart';
 import ManagerControlDashboard from './components/ManagerControlDashboard';
 import { getSingaporeMonth } from './lib/overtimeRisk';
 import { MixedMonthAnalytics } from './components/workflow/TaskWorkflow';
+import MonthlyOtPrintReport from './components/reports/MonthlyOtPrintReport';
 import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
 import { OT_V13_ENABLED } from './lib/v13Flags';
 import { workflowService } from './lib/workflowService';
@@ -711,7 +712,7 @@ export default function ManagerPortal() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+    <div className="manager-app-shell min-h-screen bg-slate-50 flex flex-col md:flex-row">
       {/* Sidebar */}
       <aside className="w-full md:w-64 bg-slate-900 text-white p-6 flex flex-col shrink-0 no-print">
         <div className="flex items-center gap-3 mb-10 px-2">
@@ -2219,6 +2220,20 @@ export default function ManagerPortal() {
             </div>
           </motion.div>
         </div>
+      )}
+      {activeTab === 'report' && selectedEmployeeSummary && (
+        <MonthlyOtPrintReport
+          employeeName={selectedEmployeeSummary.employeeName}
+          month={selectedMonth}
+          rows={selectedReportRows}
+          onePointFiveHours={selectedEmployeeSummary.totalHours}
+          doubleTimeHours={selectedDoubleTimeHours}
+          confirmed={confirmedEmployees.has(selectedEmployeeSummary.employeeId)}
+          employeeSignature={employeeSignatures[selectedEmployeeSummary.employeeId] || (
+            signature ? { data: signature, type: signatureType || 'draw' } : null
+          )}
+          supervisorApproval={supervisorReport}
+        />
       )}
     </div>
   );
