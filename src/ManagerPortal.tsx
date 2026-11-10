@@ -46,7 +46,7 @@ import { workflowService } from './lib/workflowService';
 import { calculateWorkedHours, getEmploymentType, getSingaporeDate, isSundayDate, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from './lib/workflows';
 
 export default function ManagerPortal() {
-  const { logout, user } = useAuth();
+  const { logout, user, login } = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [employees, setEmployees] = useState<UserProfile[]>([]);
@@ -86,6 +86,9 @@ export default function ManagerPortal() {
   const [managerManualWorkstation, setManagerManualWorkstation] = useState('');
   const [managerManualRemarks, setManagerManualRemarks] = useState('');
   const [managerManualError, setManagerManualError] = useState('');
+  const [managerManualNeedsAuth, setManagerManualNeedsAuth] = useState(false);
+  const [managerManualPassword, setManagerManualPassword] = useState('');
+  const [managerManualAuthenticating, setManagerManualAuthenticating] = useState(false);
   const [managerManualSaving, setManagerManualSaving] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [signatureType, setSignatureType] = useState<'upload' | 'text' | 'draw' | null>(null);
@@ -166,6 +169,8 @@ export default function ManagerPortal() {
     setManagerManualWorkstation('');
     setManagerManualRemarks('');
     setManagerManualError('');
+    setManagerManualNeedsAuth(false);
+    setManagerManualPassword('');
     setManagerManualOpen(true);
   };
 
@@ -184,6 +189,21 @@ export default function ManagerPortal() {
     setManagerManualSaving(true);
     setManagerManualError('');
     try {
+      const sessionResponse = await fetch('/api/auth/session', {
+        method: 'GET', credentials: 'same-origin', cache: 'no-store'
+      });
+      if (sessionResponse.status === 401) {
+        setManagerManualNeedsAuth(true);
+        setManagerManualError('Login expired / 登录已过期。请在下面重新验证 Manager 密码，已填写内容会保留。');
+        return;
+      }
+      if (!sessionResponse.ok) throw new Error('Unable to verify login / 无法验证登录状态');
+      const session = await sessionResponse.json() as { role?: string };
+      if (session.role !== 'manager') {
+        setManagerManualNeedsAuth(true);
+        setManagerManualError('Manager authentication required / 请重新验证 Manager 身份');
+        return;
+      }
       await workflowService.manualEntry({
         employeeId: selectedEmployeeSummary.employeeId,
         date: managerManualDate,
@@ -196,9 +216,43 @@ export default function ManagerPortal() {
       await fetchData();
       setManagerManualOpen(false);
     } catch (reason) {
-      setManagerManualError(reason instanceof Error ? reason.message : 'Manual entry failed / 补录失败');
+      const message = reason instanceof Error ? reason.message : 'Manual entry failed / 补录失败';
+      if (message === 'UNAUTHENTICATED' || message === 'Authentication required') {
+        setManagerManualNeedsAuth(true);
+        setManagerManualError('Login expired / 登录已过期。请重新验证 Manager 密码后再次保存，表格数据不会消失。');
+      } else {
+        setManagerManualError(message);
+      }
     } finally {
       setManagerManualSaving(false);
+    }
+  };
+
+  const reauthenticateManagerManual = async () => {
+    if (!managerManualPassword || managerManualAuthenticating) return;
+    setManagerManualAuthenticating(true);
+    setManagerManualError('');
+    try {
+      const response = await fetch('/api/staff/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ role: 'manager', password: managerManualPassword })
+      });
+      if (!response.ok) throw new Error('Incorrect Manager password / Manager 密码不正确');
+      const verification = await response.json() as { verified?: boolean; role?: string };
+      if (!verification.verified || verification.role !== 'manager') {
+        throw new Error('Manager verification failed / 经理身份验证失败');
+      }
+      if (!(await login())) throw new Error('Session refresh failed / 登录会话更新失败');
+      setManagerManualNeedsAuth(false);
+      setManagerManualError('');
+      // The draft stays in state; saving requires an explicit second click.
+    } catch (reason) {
+      setManagerManualError(reason instanceof Error ? reason.message : 'Reauthentication failed');
+    } finally {
+      setManagerManualPassword('');
+      setManagerManualAuthenticating(false);
     }
   };
 
@@ -1893,8 +1947,32 @@ export default function ManagerPortal() {
                 </div>
 
                 {managerManualError && (
-                  <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+                  <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700" role="alert">
                     {managerManualError}
+                  </div>
+                )}
+                {managerManualNeedsAuth && (
+                  <div className="sm:col-span-2 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                    <p className="mb-2 text-sm font-black text-amber-900">Re-authenticate Manager / 重新验证经理身份</p>
+                    <p className="mb-3 text-xs font-bold text-amber-800">Your manual entry is preserved. Enter the Manager password, then click Save again. / 已填写补录资料保留，验证后再按保存。</p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        type="password"
+                        autoComplete="current-password"
+                        value={managerManualPassword}
+                        onChange={(event) => setManagerManualPassword(event.target.value)}
+                        placeholder="Manager password / 经理密码"
+                        className="min-w-0 flex-1 rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm"
+                      />
+                      <button
+                        type="button"
+                        disabled={managerManualAuthenticating || !managerManualPassword}
+                        onClick={() => void reauthenticateManagerManual()}
+                        className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
+                      >
+                        {managerManualAuthenticating ? 'Verifying...' : 'Verify / 验证'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1909,7 +1987,7 @@ export default function ManagerPortal() {
                 </button>
                 <button
                   type="submit"
-                  disabled={managerManualSaving || !managerManualDate || !managerManualHours}
+                  disabled={managerManualSaving || managerManualNeedsAuth || !managerManualDate || !managerManualHours}
                   className="flex-[2] rounded-xl bg-orange-500 p-3 font-black text-white shadow-lg shadow-orange-100 transition hover:bg-orange-600 disabled:opacity-40"
                 >
                   {managerManualSaving ? 'Saving... / 保存中...' : 'Save Manual Entry / 保存补录'}
