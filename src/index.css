@@ -268,6 +268,123 @@
   .ot-monthly-print-document .ot-print-signature-status { margin: .5mm 0 0; font-size: 7.5pt; color: #64748b; }
 }
 
+
+/* A4 single-page-first layout for employee Monthly OT reports.
+   Normal 1–22 rows: readable compact table. 23–31 rows: tighter density.
+   32+ rows: safe continuation; never clip records or signatures. */
+@media print {
+  @page { size: A4 portrait; margin: 9mm 10mm 10mm; }
+
+  .manager-app-shell.print-single-employee > .ot-monthly-print-document {
+    font-size: 8pt !important;
+    line-height: 1.18 !important;
+  }
+  .ot-monthly-print-document.ot-print-fit-page {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .ot-monthly-print-document .ot-print-heading {
+    padding-bottom: 2.5mm !important;
+    margin-bottom: 2.5mm !important;
+    border-bottom-width: 1.5px !important;
+  }
+  .ot-monthly-print-document .ot-print-kicker {
+    font-size: 7.2pt !important;
+    margin-bottom: 1mm !important;
+  }
+  .ot-monthly-print-document h1 {
+    font-size: 15pt !important;
+    line-height: 1.1 !important;
+  }
+  .ot-monthly-print-document .ot-print-meta {
+    margin-top: 1mm !important;
+    font-size: 7.7pt !important;
+  }
+  .ot-monthly-print-document .ot-print-heading-status {
+    font-size: 7.5pt !important;
+    gap: .8mm !important;
+  }
+
+  /* Narrow but legible rows keep an entire standard monthly log on A4. */
+  .ot-monthly-print-document .ot-print-table th {
+    font-size: 7.5pt !important;
+    line-height: 1.13 !important;
+    padding: 1.6mm 1.2mm !important;
+  }
+  .ot-monthly-print-document .ot-print-table td {
+    font-size: 7.6pt !important;
+    line-height: 1.13 !important;
+    padding: 1.35mm 1.2mm !important;
+  }
+  .ot-monthly-print-document .ot-print-table td.ot-print-remarks {
+    overflow-wrap: anywhere !important;
+  }
+  .ot-monthly-print-document.ot-print-density-tight .ot-print-table th {
+    font-size: 7.1pt !important;
+    padding: 1.2mm 1mm !important;
+  }
+  .ot-monthly-print-document.ot-print-density-tight .ot-print-table td {
+    font-size: 7.2pt !important;
+    line-height: 1.08 !important;
+    padding: .85mm 1mm !important;
+  }
+  .ot-monthly-print-document.ot-print-density-tight .ot-print-heading {
+    padding-bottom: 1.5mm !important;
+    margin-bottom: 1.5mm !important;
+  }
+
+  /* Totals and signatures are one compact, non-splittable final block. */
+  .ot-monthly-print-document .ot-print-closing {
+    margin-top: 2.5mm !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .ot-monthly-print-document .ot-print-totals {
+    gap: 2.5mm !important;
+  }
+  .ot-monthly-print-document .ot-print-totals > div {
+    padding: 1.8mm 2.4mm !important;
+    gap: .5mm !important;
+    font-size: 7.3pt !important;
+  }
+  .ot-monthly-print-document .ot-print-totals strong {
+    font-size: 13.5pt !important;
+    line-height: 1.05 !important;
+  }
+  .ot-monthly-print-document .ot-print-totals small {
+    font-size: 6.8pt !important;
+  }
+  .ot-monthly-print-document .ot-print-approval-heading {
+    margin: 2mm 0 1.5mm !important;
+    font-size: 8pt !important;
+  }
+  .ot-monthly-print-document .ot-print-signatures {
+    gap: 3mm !important;
+  }
+  .ot-monthly-print-document .ot-print-signature-box {
+    min-height: 0 !important;
+    padding: 1.5mm 2.5mm !important;
+  }
+  .ot-monthly-print-document .ot-print-signature-title {
+    font-size: 7.3pt !important;
+  }
+  .ot-monthly-print-document .ot-print-signature-space {
+    height: 12mm !important;
+    min-height: 12mm !important;
+  }
+  .ot-monthly-print-document .ot-print-signature-image {
+    max-height: 11.5mm !important;
+  }
+  .ot-monthly-print-document .ot-print-signature-text {
+    font-size: 15pt !important;
+  }
+  .ot-monthly-print-document .ot-print-signature-caption,
+  .ot-monthly-print-document .ot-print-signature-status {
+    font-size: 7pt !important;
+    margin-top: .5mm !important;
+  }
+}
+
 .markdown-body { @apply max-w-none; }
 
 .welcome-page {
