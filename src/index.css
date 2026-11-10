@@ -81,7 +81,7 @@
   @page { size: A4 portrait; margin: 12mm 11mm 14mm; }
 
   /* Print only the selected employee's report, not the entire Manager portal. */
-  .manager-app-shell:has(> .ot-monthly-print-document) {
+  .manager-app-shell.print-single-employee {
     display: block !important;
     min-height: 0 !important;
     height: auto !important;
@@ -91,10 +91,16 @@
     overflow: visible !important;
     background: #fff !important;
   }
-  .manager-app-shell:has(> .ot-monthly-print-document) > :not(.ot-monthly-print-document) {
+  .manager-app-shell.print-single-employee > :not(.ot-monthly-print-document) {
     display: none !important;
   }
-  .manager-app-shell > .ot-monthly-print-document {
+  /* This must work in desktop PWA and browser print previews without :has(). */
+  .manager-app-shell.print-single-employee > main,
+  .manager-app-shell.print-single-employee > aside {
+    display: none !important;
+  }
+
+  .manager-app-shell.print-single-employee > .ot-monthly-print-document {
     display: block !important;
     width: 100% !important;
     max-width: none !important;
