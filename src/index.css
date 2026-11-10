@@ -73,6 +73,195 @@
   button, nav, aside { display: none !important; }
 }
 
+
+/* Dedicated monthly report: do not alter other pages' screen layout. */
+.ot-monthly-print-document { display: none; }
+
+@media print {
+  @page { size: A4 portrait; margin: 12mm 11mm 14mm; }
+
+  /* Print only the selected employee's report, not the entire Manager portal. */
+  .manager-app-shell:has(> .ot-monthly-print-document) {
+    display: block !important;
+    min-height: 0 !important;
+    height: auto !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  .manager-app-shell:has(> .ot-monthly-print-document) > :not(.ot-monthly-print-document) {
+    display: none !important;
+  }
+  .manager-app-shell > .ot-monthly-print-document {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #172033 !important;
+    font-family: Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
+    font-size: 9pt;
+    line-height: 1.35;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .ot-monthly-print-document .ot-print-heading {
+    display: flex !important;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 5mm;
+    padding: 0 0 4mm;
+    margin-bottom: 4mm;
+    border-bottom: 2px solid #273a6a;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  .ot-monthly-print-document .ot-print-kicker {
+    margin: 0 0 1.5mm;
+    color: #344678;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: .07em;
+  }
+  .ot-monthly-print-document h1 {
+    margin: 0;
+    font-size: 17pt;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+  .ot-monthly-print-document .ot-print-meta {
+    margin: 2mm 0 0;
+    font-size: 9pt;
+  }
+  .ot-monthly-print-document .ot-print-heading-status {
+    display: flex !important;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1.5mm;
+    padding-top: 1mm;
+    text-align: right;
+    font-size: 8pt;
+    white-space: nowrap;
+  }
+  .ot-monthly-print-document .ot-print-heading-status strong { color: #274b3f; }
+  .ot-monthly-print-document .ot-print-heading-status span { color: #526177; }
+
+  .ot-monthly-print-document table.ot-print-table {
+    width: 100% !important;
+    table-layout: fixed;
+    border-collapse: collapse !important;
+    border: 1px solid #b7c2d1 !important;
+    margin: 0 !important;
+  }
+  .ot-monthly-print-document .ot-print-table thead {
+    display: table-header-group !important;
+  }
+  .ot-monthly-print-document .ot-print-table tbody {
+    display: table-row-group !important;
+  }
+  .ot-monthly-print-document .ot-print-table tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .ot-monthly-print-document .ot-print-table th {
+    background: #ecf1f8 !important;
+    color: #142441 !important;
+    font-weight: 700;
+    text-align: left;
+    font-size: 8pt !important;
+    line-height: 1.22;
+    padding: 2.5mm 1.5mm !important;
+    border: 1px solid #b7c2d1 !important;
+  }
+  .ot-monthly-print-document .ot-print-table td {
+    padding: 2.1mm 1.5mm !important;
+    border: 1px solid #d5dde8 !important;
+    font-size: 8pt !important;
+    line-height: 1.3;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+  }
+  .ot-monthly-print-document .ot-print-table .ot-print-date,
+  .ot-monthly-print-document .ot-print-table .ot-print-time,
+  .ot-monthly-print-document .ot-print-table .ot-print-hours {
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .ot-monthly-print-document .ot-print-table .ot-print-hours {
+    text-align: right;
+    font-weight: 700;
+    color: #243d94;
+  }
+  .ot-monthly-print-document .ot-print-table .ot-print-empty { text-align: center; padding: 8mm 2mm !important; }
+
+  /* Totals and both signatures must remain together, or move to the next page. */
+  .ot-monthly-print-document .ot-print-closing {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-top: 5mm;
+  }
+  .ot-monthly-print-document .ot-print-totals {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 3mm;
+  }
+  .ot-monthly-print-document .ot-print-totals > div {
+    display: flex !important;
+    flex-direction: column;
+    gap: 1mm;
+    padding: 3mm;
+    background: #f1f4fa !important;
+    border: 1px solid #cbd5e1;
+    font-size: 8.5pt;
+    font-weight: 700;
+  }
+  .ot-monthly-print-document .ot-print-totals strong { font-size: 16pt; color: #243d94; line-height: 1.15; }
+  .ot-monthly-print-document .ot-print-totals small { font-size: 7.5pt; color: #64748b; }
+  .ot-monthly-print-document .ot-print-approval-heading {
+    margin: 5mm 0 2mm;
+    font-size: 9pt;
+    font-weight: 700;
+    color: #142441;
+    letter-spacing: .03em;
+  }
+  .ot-monthly-print-document .ot-print-signatures {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 7mm;
+  }
+  .ot-monthly-print-document .ot-print-signature-box {
+    border: 1px solid #cbd5e1;
+    padding: 3mm 4mm;
+    min-height: 29mm;
+  }
+  .ot-monthly-print-document .ot-print-signature-title {
+    margin: 0;
+    color: #334155;
+    font-size: 8pt;
+    font-weight: 700;
+  }
+  .ot-monthly-print-document .ot-print-signature-space {
+    height: 16mm;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid #94a3b8;
+    overflow: hidden;
+  }
+  .ot-monthly-print-document .ot-print-signature-image { max-height: 15mm; max-width: 100%; object-fit: contain; }
+  .ot-monthly-print-document .ot-print-signature-text { font-size: 16pt; font-style: italic; font-family: Georgia, serif; }
+  .ot-monthly-print-document .ot-print-signature-pending { font-size: 8pt; font-style: italic; color: #64748b; }
+  .ot-monthly-print-document .ot-print-signature-caption {
+    margin: 1.2mm 0 0;
+    font-size: 8pt;
+    font-weight: 700;
+  }
+  .ot-monthly-print-document .ot-print-signature-status { margin: .5mm 0 0; font-size: 7.5pt; color: #64748b; }
+}
+
 .markdown-body { @apply max-w-none; }
 
 .welcome-page {
