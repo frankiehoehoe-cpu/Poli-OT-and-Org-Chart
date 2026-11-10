@@ -712,7 +712,7 @@ export default function ManagerPortal() {
   };
 
   return (
-    <div className="manager-app-shell min-h-screen bg-slate-50 flex flex-col md:flex-row">
+    <div className={`manager-app-shell min-h-screen bg-slate-50 flex flex-col md:flex-row ${activeTab === 'report' && selectedEmployeeSummary ? 'print-single-employee' : ''}`}>
       {/* Sidebar */}
       <aside className="w-full md:w-64 bg-slate-900 text-white p-6 flex flex-col shrink-0 no-print">
         <div className="flex items-center gap-3 mb-10 px-2">
