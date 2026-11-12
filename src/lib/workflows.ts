@@ -370,6 +370,7 @@ export function getMonthlyOtSessions(
   const legacySessions: MonthlyOtSession[] = legacy
     .filter((entry) =>
       entry.date.startsWith(month) &&
+      entry.status !== 'rejected' &&
       !authoritativeV13OtDays.has(`${entry.employeeId}:${entry.date}`)
     )
     .map((entry) => ({
