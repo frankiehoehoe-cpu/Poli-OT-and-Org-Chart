@@ -126,7 +126,10 @@ export interface LegacyOtRecord {
   date: string;
   totalHours: number;
   multiplier: number;
+  startTime?: string;
+  endTime?: string;
   verified?: boolean;
+  status?: 'pending' | 'verified' | 'rejected';
 }
 
 export interface EmployeeMonthAggregate {
@@ -327,6 +330,88 @@ export function applyEffectiveCorrection(
   };
 }
 
+export interface MonthlyOtSession {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  totalHours: number;
+  multiplier: 1.5 | 2;
+  source: 'legacy' | 'v13';
+  startTime?: string;
+  endTime?: string;
+  verified?: boolean;
+  status?: 'pending' | 'verified' | 'rejected';
+}
+
+/**
+ * Single authoritative session selector for monthly totals AND Management Dashboard.
+ * Legacy records on days covered by an active V1.3 OT assignment are excluded,
+ * preventing double-counting across sources. PT worked hours and 2nd Shift are not OT.
+ */
+export function getMonthlyOtSessions(
+  month: string,
+  legacy: LegacyOtRecord[],
+  submissions: WorkSubmission[],
+  assignments: WorkAssignment[]
+): MonthlyOtSession[] {
+  const authoritativeV13OtDays = new Set(
+    assignments
+      .filter((assignment) =>
+        assignment.date.startsWith(month) &&
+        assignment.assignmentMode === 'ot-task' &&
+        assignment.status !== 'CANCELLED'
+      )
+      .flatMap((assignment) =>
+        assignment.assignedEmployeeIds.map((employeeId) => `${employeeId}:${assignment.date}`)
+      )
+  );
+  const assignmentById = new Map(assignments.map((assignment) => [assignment.id, assignment]));
+  const legacySessions: MonthlyOtSession[] = legacy
+    .filter((entry) =>
+      entry.date.startsWith(month) &&
+      !authoritativeV13OtDays.has(`${entry.employeeId}:${entry.date}`)
+    )
+    .map((entry) => ({
+      id: entry.id,
+      employeeId: entry.employeeId,
+      employeeName: entry.employeeName,
+      date: entry.date,
+      totalHours: entry.totalHours,
+      multiplier: entry.multiplier === 2 || isSundayDate(entry.date) ? 2 : 1.5,
+      source: 'legacy' as const,
+      startTime: entry.startTime,
+      endTime: entry.endTime,
+      verified: entry.verified,
+      status: entry.status
+    }));
+  const v13Sessions: MonthlyOtSession[] = submissions
+    .filter((submission) =>
+      submission.taskDate.startsWith(month) &&
+      submission.shiftTypeSnapshot !== 'SECOND_SHIFT' &&
+      submission.employmentTypeSnapshot === 'full-time'
+    )
+    .map((submission) => {
+      const assignment = assignmentById.get(submission.assignmentId);
+      return {
+        id: submission.id,
+        employeeId: submission.employeeId,
+        employeeName: submission.employeeNameSnapshot,
+        date: submission.taskDate,
+        totalHours: submission.effectiveOtHours ?? submission.originalOtHours ?? 0,
+        multiplier: isSundayDate(submission.taskDate) ? 2 as const : 1.5 as const,
+        source: 'v13' as const,
+        startTime: assignment?.plannedStart,
+        endTime: assignment?.plannedEnd,
+        verified: true,
+        status: 'verified' as const
+      };
+    });
+  return [...legacySessions, ...v13Sessions].sort((a,b) =>
+    a.date.localeCompare(b.date) || a.employeeId.localeCompare(b.employeeId) || a.id.localeCompare(b.id)
+  );
+}
+
 export function aggregateMixedMonth(
   month: string,
   legacy: LegacyOtRecord[],
@@ -341,50 +426,32 @@ export function aggregateMixedMonth(
     values.set(id, created);
     return created;
   };
-  const authoritativeV13OtDays = new Set(
-    assignments
-      .filter((assignment) =>
-        assignment.date.startsWith(month) &&
-        assignment.assignmentMode === 'ot-task' &&
-        assignment.status !== 'CANCELLED'
-      )
-      .flatMap((assignment) =>
-        assignment.assignedEmployeeIds.map((employeeId) => `${employeeId}:${assignment.date}`)
-      )
-  );
 
-  legacy.filter((entry) =>
-    entry.date.startsWith(month) &&
-    !authoritativeV13OtDays.has(`${entry.employeeId}:${entry.date}`)
-  ).forEach((entry) => {
-    const aggregate = ensure(entry.employeeId, entry.employeeName);
-    const isDoubleTime = entry.multiplier === 2 || isSundayDate(entry.date);
-    if (isDoubleTime) {
-      aggregate.doubleTimeOtHours += entry.totalHours;
+  getMonthlyOtSessions(month, legacy, submissions, assignments).forEach((session) => {
+    const aggregate = ensure(session.employeeId, session.employeeName);
+    if (session.multiplier === 2) {
+      aggregate.doubleTimeOtHours += session.totalHours;
       aggregate.doubleTimeEntryCount += 1;
-      return;
+    } else {
+      aggregate.fullTimeOtHours += session.totalHours;
+      aggregate.otEntryCount += 1;
+      if (session.source === 'v13') aggregate.v13OtHours += session.totalHours;
+      else aggregate.legacyOtHours += session.totalHours;
     }
-    aggregate.legacyOtHours += entry.totalHours;
-    aggregate.fullTimeOtHours += entry.totalHours;
-    aggregate.otEntryCount += 1;
   });
-  submissions.filter((submission) => submission.taskDate.startsWith(month) && submission.shiftTypeSnapshot !== 'SECOND_SHIFT').forEach((submission) => {
-    const aggregate = ensure(submission.employeeId, submission.employeeNameSnapshot);
-    if (submission.employmentTypeSnapshot === 'part-time') {
+
+  submissions
+    .filter((submission) =>
+      submission.taskDate.startsWith(month) &&
+      submission.shiftTypeSnapshot !== 'SECOND_SHIFT' &&
+      submission.employmentTypeSnapshot === 'part-time'
+    )
+    .forEach((submission) => {
+      const aggregate = ensure(submission.employeeId, submission.employeeNameSnapshot);
       aggregate.partTimeWorkedHours += submission.effectiveWorkedHours ?? submission.originalWorkedHours ?? 0;
       aggregate.partTimeSubmissionCount += 1;
-    } else {
-      const hours = submission.effectiveOtHours ?? submission.originalOtHours ?? 0;
-      if (isSundayDate(submission.taskDate)) {
-        aggregate.doubleTimeOtHours += hours;
-        aggregate.doubleTimeEntryCount += 1;
-      } else {
-        aggregate.v13OtHours += hours;
-        aggregate.fullTimeOtHours += hours;
-        aggregate.otEntryCount += 1;
-      }
-    }
-  });
+    });
+
   return [...values.values()].sort((left, right) => left.employeeName.localeCompare(right.employeeName));
 }
 
