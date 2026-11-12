@@ -4,7 +4,7 @@ import { getV13Collections } from '../_v13Collections.js';
 import { listEffectiveEmployees } from '../_v13Employees.js';
 import { requireSession } from '../_session.js';
 import { safeString, sendApiError } from '../_v13.js';
-import { aggregateMixedMonth, getEmploymentType, getPartTimeMonthlyForecast, type LegacyOtRecord, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
+import { aggregateMixedMonth, getEmploymentType, getMonthlyOtSessions, getPartTimeMonthlyForecast, type LegacyOtRecord, type WorkAssignment, type WorkSubmission } from '../../src/lib/workflows.js';
 
 export default async function handler(request: Request, response: Response) {
   response.setHeader('Cache-Control', 'private, no-store');
@@ -24,6 +24,11 @@ export default async function handler(request: Request, response: Response) {
     const submissions = submissionDocuments.map((document) => ({ ...document.data, id: document.id }));
     const assignments = assignmentDocuments.map((document) => ({ ...document.data, id: document.id }));
     const aggregates = aggregateMixedMonth(month, legacy, submissions, assignments);
+    // Reuse the exact session-selection logic used by the authoritative month aggregate.
+    const otSessions = getMonthlyOtSessions(month, legacy, submissions, assignments);
+    const visibleOtSessions = session.role === 'employee'
+      ? otSessions.filter((ot) => ot.employeeId === session.employeeId)
+      : otSessions;
     const filtered = session.role === 'employee' ? aggregates.filter((aggregate) => aggregate.employeeId === session.employeeId) : aggregates;
     const partTimeEmployees = employees.filter((employee) => getEmploymentType(employee) === 'part-time');
     const visiblePartTimeEmployees = session.role === 'employee'
@@ -34,7 +39,7 @@ export default async function handler(request: Request, response: Response) {
       employeeName: employee.name,
       ...getPartTimeMonthlyForecast(assignments, submissions, employee.id, month)
     }));
-    return response.status(200).json({ aggregates: filtered, forecasts });
+    return response.status(200).json({ aggregates: filtered, forecasts, otSessions: visibleOtSessions });
   } catch (error) {
     return sendApiError(response, error);
   }

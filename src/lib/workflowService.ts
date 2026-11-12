@@ -1,4 +1,4 @@
-import type { EmployeeMonthAggregate, FullTimeOtAvailability, PartTimeAvailability, PartTimeMonthlyForecast, ShiftNotice, ShiftType, WorkAssignment, WorkSubmission } from './workflows';
+import type { EmployeeMonthAggregate, MonthlyOtSession, FullTimeOtAvailability, PartTimeAvailability, PartTimeMonthlyForecast, ShiftNotice, ShiftType, WorkAssignment, WorkSubmission } from './workflows';
 
 export interface PublicAssignmentParticipant {
   employeeId: string;
@@ -127,7 +127,7 @@ export const workflowService = {
   async noticeAction(id: string, action: 'end' | 'visibility', visibility?: ShiftNotice['visibility']): Promise<ShiftNotice> {
     return (await api<{ notice: ShiftNotice }>('/api/v13/shift-notices', { method: 'PATCH', body: JSON.stringify({ id, action, visibility }) })).notice;
   },
-  async month(month: string): Promise<{ aggregates: EmployeeMonthAggregate[]; forecasts: Array<PartTimeMonthlyForecast & { employeeId: string; employeeName: string }> }> {
+  async month(month: string): Promise<{ aggregates: EmployeeMonthAggregate[]; forecasts: Array<PartTimeMonthlyForecast & { employeeId: string; employeeName: string }>; otSessions: MonthlyOtSession[] }> {
     return api(`/api/v13/month?month=${encodeURIComponent(month)}`);
   }
 };

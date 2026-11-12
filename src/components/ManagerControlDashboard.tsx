@@ -4,8 +4,10 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import type { OvertimeEntry, UserProfile } from '../types';
 import { calculateMonthlyOvertimeRisks, type EmployeeOvertimeRisk, type OvertimeRiskLevel } from '../lib/overtimeRisk';
 import { formatDateFriendly, formatMonth } from '../lib/dateUtils';
+import type { MonthlyOtSession } from '../lib/workflows';
+import { OT_V13_ENABLED } from '../lib/v13Flags';
 
-interface Props { month: string; onMonthChange: (month: string) => void; employees: UserProfile[]; entries: OvertimeEntry[]; }
+interface Props { month: string; onMonthChange: (month: string) => void; employees: UserProfile[]; entries: OvertimeEntry[]; otSessions: MonthlyOtSession[]; dataStatus: 'loading' | 'ready' | 'error'; }
 type RiskFilter = 'ALL' | 'ATTENTION' | 'WATCH' | 'HIGH' | 'CRITICAL';
 const LEVELS: OvertimeRiskLevel[] = ['NORMAL', 'WATCH', 'HIGH', 'CRITICAL'];
 const RISK_ORDER: Record<OvertimeRiskLevel, number> = { CRITICAL: 0, HIGH: 1, WATCH: 2, NORMAL: 3 };
@@ -21,11 +23,28 @@ function KpiCard({ label, value, detail, icon }: { label: string; value: string;
   return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-start justify-between gap-3"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p><span className="rounded-xl bg-indigo-50 p-2.5 text-indigo-600">{icon}</span></div><p className="text-2xl font-black text-slate-900">{value}</p>{detail && <div className="mt-1 line-clamp-2 min-h-8 text-xs font-medium leading-4 text-slate-500">{detail}</div>}</div>;
 }
 
-export default function ManagerControlDashboard({ month, onMonthChange, employees, entries }: Props) {
+export default function ManagerControlDashboard({ month, onMonthChange, employees, entries, otSessions, dataStatus }: Props) {
   const [filter, setFilter] = useState<RiskFilter>('ATTENTION');
   const [selectedRisk, setSelectedRisk] = useState<EmployeeOvertimeRisk | null>(null);
   const analytics = useMemo(() => {
-    const monthEntries = entries.filter((entry) => entry.date.slice(0, 7) === month && entry.status !== 'rejected');
+    // V1.3 authoritative + non-overlapping legacy records, exactly as counted by Monthly OT.
+    // Part-Time worked hours never enter Full-Time OT/risk statistics.
+    const monthEntries: OvertimeEntry[] = OT_V13_ENABLED
+      ? otSessions.filter((session) => session.date.startsWith(month) && session.status !== 'rejected')
+          .map((session) => ({
+            id: session.id,
+            employeeId: session.employeeId,
+            employeeName: session.employeeName,
+            date: session.date,
+            startTime: session.startTime || '',
+            endTime: session.endTime || '',
+            totalHours: session.totalHours,
+            multiplier: session.multiplier,
+            verified: session.verified ?? true,
+            status: session.status || 'verified',
+            createdAt: null
+          }))
+      : entries.filter((entry) => entry.date.slice(0, 7) === month && entry.status !== 'rejected');
     const risks = calculateMonthlyOvertimeRisks(employees, monthEntries, month);
     const active = risks.filter((risk) => risk.sessionCount > 0);
     const sorted = [...active].sort((a, b) => RISK_ORDER[a.level] - RISK_ORDER[b.level] || b.monthlyHours - a.monthlyHours);
@@ -39,7 +58,7 @@ export default function ManagerControlDashboard({ month, onMonthChange, employee
     const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
     monthEntries.forEach((entry) => { const name = departmentName(employeesById.get(entry.employeeId)?.department); const row = departments.get(name) ?? { name, employeeIds: new Set<string>(), sessions: 0, hours: 0 }; row.employeeIds.add(entry.employeeId); row.sessions += 1; row.hours += entry.totalHours; departments.set(name, row); });
     return { monthEntries, risks, sorted, totalHours, weekly, distribution, averageWeeklyHours, departmentRows: [...departments.values()].sort((a, b) => b.hours - a.hours), highest: [...active].sort((a, b) => b.monthlyHours - a.monthlyHours)[0], alerts: active.filter((risk) => risk.level !== 'NORMAL').length };
-  }, [employees, entries, month]);
+  }, [employees, entries, otSessions, month]);
 
   const visibleRisks = analytics.sorted.filter((risk) => filter === 'ALL' || (filter === 'ATTENTION' && risk.level !== 'NORMAL') || risk.level === filter);
   const criticalCount = analytics.distribution.CRITICAL;
@@ -50,6 +69,26 @@ export default function ManagerControlDashboard({ month, onMonthChange, employee
   const dominantDepartment = analytics.departmentRows[0];
   const dominantShare = analytics.totalHours ? (dominantDepartment?.hours ?? 0) / analytics.totalHours * 100 : 0;
   const priorityEmployees = analytics.sorted.filter((risk) => risk.level !== 'NORMAL').slice(0, 5);
+
+  if (dataStatus !== 'ready') {
+    return <div className="space-y-4">
+      <div className="flex flex-col gap-4 rounded-2xl bg-slate-900 px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">Management Control Dashboard</p>
+          <h3 className="mt-1 text-2xl font-black">{formatMonth(month)}</h3>
+        </div>
+        <label className="flex items-center gap-3 text-sm font-bold">
+          <CalendarDays className="h-5 w-5 text-indigo-300"/>
+          <input aria-label="Dashboard month" type="month" value={month} onChange={(event) => onMonthChange(event.target.value)} className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-white [color-scheme:dark]"/>
+        </label>
+      </div>
+      <div role={dataStatus === 'error' ? 'alert' : 'status'} className={`rounded-2xl border px-5 py-4 font-bold ${dataStatus === 'error' ? 'border-red-200 bg-red-50 text-red-800' : 'border-indigo-200 bg-indigo-50 text-indigo-800'}`}>
+        {dataStatus === 'error'
+          ? 'Monthly OT data could not be loaded / 月度加班资料读取失败。请重试，当前数字不代表没有加班记录。'
+          : 'Loading authoritative monthly OT data... / 正在读取月度加班记录...'}
+      </div>
+    </div>;
+  }
 
   return <div className="space-y-7">
     <div className="flex flex-col gap-4 rounded-2xl bg-slate-900 px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">Management Control Dashboard</p><h3 className="mt-1 text-2xl font-black">{formatMonth(month)}</h3><p className="mt-1 text-sm text-slate-400">Internal OT Monitoring · 内部加班监控</p></div><label className="flex items-center gap-3 text-sm font-bold"><CalendarDays className="h-5 w-5 text-indigo-300"/><input aria-label="Dashboard month" type="month" value={month} onChange={(event) => onMonthChange(event.target.value)} className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-white [color-scheme:dark]"/></label></div>

@@ -44,7 +44,7 @@ import MonthlyOtPrintReport from './components/reports/MonthlyOtPrintReport';
 import { PartTimeAvailabilityCalendar } from './components/workflow/PartTimeAvailabilityCalendar';
 import { OT_V13_ENABLED } from './lib/v13Flags';
 import { workflowService } from './lib/workflowService';
-import { calculateWorkedHours, getEmploymentType, getSingaporeDate, isSundayDate, type EmployeeMonthAggregate, type WorkAssignment, type WorkSubmission } from './lib/workflows';
+import { calculateWorkedHours, getEmploymentType, getSingaporeDate, isSundayDate, type EmployeeMonthAggregate, type MonthlyOtSession, type WorkAssignment, type WorkSubmission } from './lib/workflows';
 
 export default function ManagerPortal() {
   const { logout, user, login } = useAuth();
@@ -57,6 +57,8 @@ export default function ManagerPortal() {
   const [v13Submissions, setV13Submissions] = useState<WorkSubmission[]>([]);
   const [v13Assignments, setV13Assignments] = useState<WorkAssignment[]>([]);
   const [v13Aggregates, setV13Aggregates] = useState<EmployeeMonthAggregate[]>([]);
+  const [monthlyOtSessions, setMonthlyOtSessions] = useState<MonthlyOtSession[]>([]);
+  const [monthlyDashboardStatus, setMonthlyDashboardStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'profiles' | 'report' | 'settings' | 'planning' | 'roster' | 'orgchart'>('dashboard');
   
   // Create/Edit Profile State
@@ -115,7 +117,7 @@ export default function ManagerPortal() {
 
   useEffect(() => {
     calculateSummaries();
-  }, [entries, employees]);
+  }, [entries, employees, v13Aggregates, v13Assignments, selectedMonth]);
 
   useEffect(() => {
     fetchGlobalReport();
@@ -403,20 +405,28 @@ export default function ManagerPortal() {
   };
 
   const fetchData = async () => {
-    const [empData, entryData, planData, submissionsData, assignmentsData, monthData] = await Promise.all([
-      employeeService.getAllEmployees(),
-      overtimeService.getAllEntries(selectedMonth),
-      planService.getAllPlansForMonth(selectedMonth),
-      OT_V13_ENABLED ? workflowService.submissions(selectedMonth) : Promise.resolve([]),
-      OT_V13_ENABLED ? workflowService.assignments() : Promise.resolve([]),
-      OT_V13_ENABLED ? workflowService.month(selectedMonth) : Promise.resolve({ aggregates: [], forecasts: [] })
-    ]);
-    setEmployees(empData);
-    setEntries(entryData);
-    setPlans(planData);
-    setV13Submissions(submissionsData);
-    setV13Assignments(assignmentsData);
-    setV13Aggregates(monthData.aggregates);
+    setMonthlyDashboardStatus('loading');
+    try {
+      const [empData, entryData, planData, submissionsData, assignmentsData, monthData] = await Promise.all([
+        employeeService.getAllEmployees(),
+        overtimeService.getAllEntries(selectedMonth),
+        planService.getAllPlansForMonth(selectedMonth),
+        OT_V13_ENABLED ? workflowService.submissions(selectedMonth) : Promise.resolve([]),
+        OT_V13_ENABLED ? workflowService.assignments() : Promise.resolve([]),
+        OT_V13_ENABLED ? workflowService.month(selectedMonth) : Promise.resolve({ aggregates: [], forecasts: [], otSessions: [] })
+      ]);
+      setEmployees(empData);
+      setEntries(entryData);
+      setPlans(planData);
+      setV13Submissions(submissionsData);
+      setV13Assignments(assignmentsData);
+      setV13Aggregates(monthData.aggregates);
+      setMonthlyOtSessions(monthData.otSessions || []);
+      setMonthlyDashboardStatus('ready');
+    } catch (error) {
+      console.error('Manager monthly OT data load failed:', error);
+      setMonthlyDashboardStatus('error');
+    }
   };
 
   const handleEditEntry = async (e: React.FormEvent) => {
@@ -834,7 +844,7 @@ export default function ManagerPortal() {
         </header>
 
         {activeTab === 'dashboard' && (
-          <ManagerControlDashboard month={selectedMonth} onMonthChange={setSelectedMonth} employees={employees} entries={entries} />
+          <ManagerControlDashboard month={selectedMonth} onMonthChange={setSelectedMonth} employees={employees} entries={entries} otSessions={monthlyOtSessions} dataStatus={monthlyDashboardStatus} />
         )}
 
         {activeTab === 'profiles' && (
