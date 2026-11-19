@@ -57,6 +57,8 @@ export default function SupervisorPortal() {
   const [v13Submissions, setV13Submissions] = useState<WorkSubmission[]>([]);
   const [v13Assignments, setV13Assignments] = useState<WorkAssignment[]>([]);
   const [v13Aggregates, setV13Aggregates] = useState<EmployeeMonthAggregate[]>([]);
+  const [v13ApprovalLoadedMonth, setV13ApprovalLoadedMonth] = useState<string | null>(null);
+  const [v13ApprovalLoadError, setV13ApprovalLoadError] = useState(false);
   const [portalView, setPortalView] = useState<'workflow' | 'roster'>('workflow');
 
   // Signature States
@@ -81,14 +83,23 @@ export default function SupervisorPortal() {
 
   const fetchV13Month = async () => {
     if (!OT_V13_ENABLED) return;
-    const [submissions, assignments, monthData] = await Promise.all([
-      workflowService.submissions(selectedMonth),
-      workflowService.assignments(),
-      workflowService.month(selectedMonth)
-    ]);
-    setV13Submissions(submissions);
-    setV13Assignments(assignments);
-    setV13Aggregates(monthData.aggregates);
+    const requestedMonth = selectedMonth;
+    setV13ApprovalLoadedMonth(null);
+    setV13ApprovalLoadError(false);
+    try {
+      const [submissions, assignments, monthData] = await Promise.all([
+        workflowService.submissions(requestedMonth),
+        workflowService.assignments(),
+        workflowService.month(requestedMonth)
+      ]);
+      setV13Submissions(submissions);
+      setV13Assignments(assignments);
+      setV13Aggregates(monthData.aggregates);
+      setV13ApprovalLoadedMonth(requestedMonth);
+    } catch (error) {
+      console.error('Unable to load V1.3 monthly supervisor approval data:', error);
+      setV13ApprovalLoadError(true);
+    }
   };
 
   useEffect(() => {
@@ -146,12 +157,22 @@ export default function SupervisorPortal() {
       return;
     }
     if (!selectedEmployeeId) return;
-    
+    if (!allApprovedForEmployee) {
+      alert('Some monthly records remain unapproved, or V1.3 records are still loading / 部分记录未审核，或V1.3资料尚未读取完成。');
+      return;
+    }
+
     setIsSubmitting(true);
-    await reportService.saveMonthlyReport(selectedMonth, selectedEmployeeId, data, type, user?.name || 'Supervisor', 'supervisor');
-    await fetchEmployeeReport();
-    setIsSubmitting(false);
-    setIsSignModalOpen(false);
+    try {
+      await reportService.saveMonthlyReport(selectedMonth, selectedEmployeeId, data, type, user?.name || 'Supervisor', 'supervisor');
+      await fetchEmployeeReport();
+      setIsSignModalOpen(false);
+    } catch (error) {
+      console.error('Supervisor monthly signature failed:', error);
+      alert('Signature could not be saved / 主管签名保存失败，请重试。');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const summaries = useMemo(() => {
@@ -238,12 +259,18 @@ export default function SupervisorPortal() {
     ? selectedAggregate.fullTimeOtHours + selectedAggregate.partTimeWorkedHours
     : filteredDetailEntries.reduce((acc, curr) => acc + (curr.multiplier === 2.0 ? 0 : curr.totalHours), 0);
 
-  const allApprovedForEmployee = useMemo(() => {
-    if (!selectedEmployeeId) return false;
-    const employeeEntries = entries.filter(e => e.employeeId === selectedEmployeeId && e.date.startsWith(selectedMonth));
-    if (employeeEntries.length === 0) return false;
-    return employeeEntries.every(e => e.status === 'verified');
-  }, [entries, selectedEmployeeId, selectedMonth]);
+  // V1.3 SUBMITTED records are authoritative; they don't create legacy 'verified'
+  // overtime rows. Only check legacy entries still visible after V1.3-day deduplication.
+  // Rejected legacy entries are not awaiting supervisor approval.
+  const v13ApprovalDataReady = !OT_V13_ENABLED || v13ApprovalLoadedMonth === selectedMonth;
+  const relevantLegacyEntries = filteredDetailEntries.filter((entry) => entry.status !== 'rejected');
+  const allApprovedForEmployee = Boolean(
+    selectedEmployeeId &&
+    v13ApprovalDataReady &&
+    (relevantLegacyEntries.length > 0 || selectedV13Submissions.length > 0) &&
+    relevantLegacyEntries.every((entry) => entry.verified || entry.status === 'verified') &&
+    selectedV13Submissions.every((submission) => submission.submissionStatus === 'SUBMITTED')
+  );
 
   if (isLoading) {
     return (
@@ -608,7 +635,11 @@ export default function SupervisorPortal() {
                         {!allApprovedForEmployee && !employeeReport && isMonthEnd() && (
                           <div className="bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-black border border-red-100 flex items-center gap-1">
                             <AlertCircle className="w-3 h-3" />
-                            WAITING FOR ALL APPROVALS
+                            {!v13ApprovalDataReady
+                              ? v13ApprovalLoadError
+                                ? 'V1.3 DATA UNAVAILABLE / V1.3资料读取失败'
+                                : 'LOADING APPROVALS / 正在核对审核状态'
+                              : 'WAITING FOR ALL APPROVALS / 等待全部审核'}
                           </div>
                         )}
                       </div>
